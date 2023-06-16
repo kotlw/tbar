@@ -9,6 +9,7 @@ use colored::Color;
 use crate::component::text::Text;
 use crate::component::traits::Component;
 use crate::options::Options;
+use crate::component::style::Style;
 
 #[derive(Default)]
 struct FooBar {
@@ -23,11 +24,7 @@ impl ZellijPlugin for FooBar {
         set_selectable(false);
         self.components = vec![Text::new(
             "Hello world".to_string(),
-            false,
-            true,
-            self.options.separator.clone(),
-            Some(Color::Yellow),
-            Some(Color::Blue),
+            Style::new((1, 1), false, Some(Color::BrightGreen), None)
         )]
     }
 
