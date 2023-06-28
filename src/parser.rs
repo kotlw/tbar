@@ -1,67 +1,45 @@
 #[derive(Debug)]
-enum TokenType {
+enum Kind {
     Session,
     Mode,
     Style,
-    Command,
+    Cmd,
     Text,
 }
 
 #[derive(Debug)]
-struct Token {
-    _type: TokenType,
+struct Component {
+    kind: Kind,
     value: String,
 }
 
-impl Token {
-    fn new(_type: TokenType, value: Option<String>) -> Token {
-        match _type {
-            TokenType::Session => Token {
-                _type,
-                value: "".to_string(),
-            },
-            TokenType::Mode => Token {
-                _type,
-                value: "".to_string(),
-            },
-            TokenType::Style => Token {
-                _type,
-                value: value.unwrap(),
-            },
-            TokenType::Command => Token {
-                _type,
-                value: value.unwrap(),
-            },
-            TokenType::Text => Token {
-                _type,
-                value: value.unwrap(),
-            },
-        }
+impl Component {
+    fn new(kind: Kind, value: String) -> Component {
+        Component { kind, value }
     }
 }
 
-fn tokenize(line: &String) -> Vec<Token> {
+fn take_until(iter: impl Iterator<Item = char>, ch: char) -> String {
+    iter.take_while(|&c| c != ch).collect::<String>()
+}
+
+fn parse(line: &String) -> Vec<Component> {
     let mut res = Vec::new();
     let mut iter = line.chars().peekable();
 
-    while let Some(..) = iter.peek() {
-        res.push(Token::new(
-            TokenType::Text,
-            Some(iter.by_ref().take_while(|&c| c != '#').collect::<String>()),
-        ));
-        match iter.next() {
-            Some('S') => res.push(Token::new(TokenType::Session, None)),
-            Some('M') => res.push(Token::new(TokenType::Mode, None)),
-            Some('[') => res.push(Token::new(
-                TokenType::Style,
-                Some(iter.by_ref().take_while(|&c| c != ']').collect())
-            )),
-            Some('(') => res.push(Token::new(
-                TokenType::Command,
-                Some(iter.by_ref().take_while(|&c| c != ')').collect())
-            )),
-            _ => (),
-        }
+    while iter.peek().is_some() {
+        // read text before first '#' char
+        res.push(Component::new(Kind::Text, take_until(iter.by_ref(), '#')));
+
+        // then read text after '#' as different kind
+        let (kind, value) = match iter.next() {
+            Some('S') => (Kind::Session, "".to_string()),
+            Some('M') => (Kind::Mode, "".to_string()),
+            Some('[') => (Kind::Style, take_until(iter.by_ref(), ']')),
+            Some('(') => (Kind::Cmd, take_until(iter.by_ref(), ')')),
+            _ => (Kind::Text, "".to_string()),
+        };
+        res.push(Component::new(kind, value));
     }
 
     res
