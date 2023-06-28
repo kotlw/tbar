@@ -34,12 +34,12 @@ impl Style {
             result = result.bold().to_string();
         }
 
-        if self.color.is_some() {
-            result = result.color(self.color.unwrap()).to_string();
+        if let Some(color) = self.color {
+            result = result.color(color).to_string();
         }
 
-        if self.on_color.is_some() {
-            result = result.on_color(self.on_color.unwrap()).to_string();
+        if let Some(color) = self.on_color {
+            result = result.on_color(color).to_string();
         }
 
         result

@@ -4,19 +4,20 @@ use unicode_width::UnicodeWidthStr;
 use crate::component::style::Style;
 use crate::component::traits::Component;
 
-pub struct Text {
-    text: String,
+pub struct SessionName {
+    session_name: String,
 }
 
-impl Text {
-    pub fn new(text: String, style: Style) -> Box<Text> {
-        Box::new(Text {
-            text: style.apply(text),
+impl SessionName {
+    pub fn new(session_name: String, style: Style) -> Box<SessionName> {
+        Box::new(SessionName {
+            session_name: style.apply(session_name),
         })
     }
 }
 
-impl Component for Text {
+
+impl Component for SessionName {
     fn load(&mut self) {}
 
     fn update(&mut self, _event: Event) -> bool {
@@ -24,10 +25,11 @@ impl Component for Text {
     }
 
     fn render(&self) -> &String {
-        &self.text
+        &self.session_name
     }
 
     fn width(&self) -> usize {
-        self.text.width()
+        self.session_name.width()
     }
 }
+
