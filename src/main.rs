@@ -1,36 +1,25 @@
-mod component;
-mod config;
 mod options;
+mod parser;
+mod style;
 
 use zellij_tile::prelude::*;
 
-use colored::Color;
-
-use crate::component::style::Style;
-use crate::component::text::Text;
-use crate::component::traits::Component;
 use crate::options::Options;
-use color_print::cformat;
-use handlebars::Handlebars;
-use serde_json::json;
+use crate::parser::{parse, Kind};
 
 #[derive(Default)]
-struct FooBar {
-    mode_info: ModeInfo,
+struct State {
     options: Options,
-    // components: Vec<Box<dyn Component>>,
+    mode_info: ModeInfo,
 }
 
-register_plugin!(FooBar);
+register_plugin!(State);
 
-impl ZellijPlugin for FooBar {
+impl ZellijPlugin for State {
     fn load(&mut self) {
+        self.options = Options::default();
         set_selectable(false);
         subscribe(&[EventType::ModeUpdate]);
-        // self.components = vec![Text::new(
-        //     "Hello world".to_string(),
-        //     Style::new((1, 1), false, Some(Color::BrightGreen), None),
-        // )]
     }
 
     fn update(&mut self, event: Event) -> bool {
@@ -48,21 +37,25 @@ impl ZellijPlugin for FooBar {
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
-        // let mut s = String::new();
-        // for cmp in self.components.iter() {
-        //     s = s + &cmp.render();
-        // }
-        // print!("{}", s);
-        let reg = Handlebars::new();
-        let mut res = self.options.line.clone();
+        let components = parse(&self.options.layout);
 
-        if let Ok(r) =
-            reg.render_template(&res, &json!({"S": self.mode_info.session_name.as_deref(),
-            "green": "\u{1b}[32m", "default": "\u{1b}[39m"}))
-        {
-            res = r
+        let mut s = String::new();
+        let mmode = "{mode}".to_string();
+        let mcmd = "{cmd}".to_string();
+
+        for component in components.iter() {
+            let rendered = match component.kind {
+                Kind::Text => Some(component.value.clone()),
+                Kind::Session => self.mode_info.session_name.clone(),
+                Kind::Mode => Some(mmode.clone()),
+                Kind::Cmd => Some(mcmd.clone()),
+                Kind::Style => Some(style::apply(&component.value)),
+            };
+            if let Some(r) = rendered {
+                s.push_str(&r);
+            }
         }
 
-        print!("{}", res);
+        print!("{}", s);
     }
 }
