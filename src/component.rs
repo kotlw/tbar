@@ -1,38 +1,65 @@
-use crate::config::ModeStyle;
-use zellij_tile::prelude::*;
+use crate::style;
 use crate::tokenizer;
+use std::collections::HashMap;
+use zellij_tile::prelude::*;
 
 pub trait Component {
-    fn render(&self) -> &String;
+    fn get(&self) -> &String;
+    fn len(&self) -> usize;
 }
 
-struct StyledText {
+pub struct Text {
     value: String,
-    len: usize,
 }
 
-impl Component for StyledText {
-    fn render(&self) -> &String {
+impl Text {
+    pub fn from_token(token: &tokenizer::Token) -> Text {
+        Text { value: token.value.clone() }
+    }
+}
+
+impl Component for Text {
+    fn get(&self) -> &String {
         &self.value
     }
+
+    fn len(&self) -> usize {
+        self.value.chars().count()
+    }
 }
 
-impl StyledText {
-    fn from_token(token: tokenizer::Token) -> StyledText {
-        let mut len = 0;
-        if token.kind != tokenizer::Kind::Style {
-            len = token.value.chars().count();
+pub struct Style {
+    value: String,
+}
+
+impl Style {
+    pub fn from_token(token: &tokenizer::Token, palette: Palette) -> Style {
+        Style {
+            value: style::apply(&token.value, palette),
         }
-        StyledText { value: token.value, len }
+    }
+}
+
+impl Component for Style {
+    fn get(&self) -> &String {
+        &self.value
     }
 
-    fn push_token(&mut self, token: tokenizer::Token) {
-        let mut len = 0;
-        if token.kind != tokenizer::Kind::Style {
-            len = token.value.chars().count();
-        }
-        self.value.push_str(&token.value);
-        self.len += len;
+    fn len(&self) -> usize {
+        0
+    }
+}
+
+#[derive(Default)]
+pub struct Mode {
+    mode: InputMode,
+    len: usize,
+    value: HashMap<InputMode, String>,
+}
+
+impl Component for Mode {
+    fn get(&self) -> &String {
+        &self.value.get(&self.mode).unwrap()
     }
 
     fn len(&self) -> usize {
@@ -40,52 +67,46 @@ impl StyledText {
     }
 }
 
+impl Mode {
+    pub fn from_cfg(mode_style: &HashMap<InputMode, String>, palette: Palette) -> Mode {
+        let mut value = HashMap::new();
+        let mut max_len = 0;
 
-#[derive(Default)]
-struct Mode {
-    mode: InputMode,
-    normal: String,
-    locked: String,
-    resize: String,
-    pane: String,
-    tab: String,
-    scroll: String,
-    enter_search: String,
-    search: String,
-    rename_tab: String,
-    rename_pane: String,
-    session: String,
-    r#move: String,
-    prompt: String,
-    tmux: String,
-}
+        for (key, val) in mode_style.iter() {
+            let mut res = String::new();
+            let mut curr_len = 0;
 
-impl Component for Mode {
-    fn render(&self) -> &String {
-        match self.mode {
-            InputMode::Normal => &self.normal,
-            InputMode::Locked => &self.locked,
-            InputMode::Resize => &self.resize,
-            InputMode::Pane => &self.pane,
-            InputMode::Tab => &self.tab,
-            InputMode::Scroll => &self.scroll,
-            InputMode::EnterSearch => &self.enter_search,
-            InputMode::Search => &self.search,
-            InputMode::RenameTab => &self.rename_tab,
-            InputMode::RenamePane => &self.rename_pane,
-            InputMode::Session => &self.session,
-            InputMode::Move => &self.r#move,
-            InputMode::Prompt => &self.prompt,
-            InputMode::Tmux => &self.tmux,
+            for p in tokenizer::tokenize(&val.to_string()).iter() {
+                match p.kind {
+                    tokenizer::Kind::Style => res.push_str(&style::apply(&p.value, palette)),
+                    tokenizer::Kind::Text => {
+                        curr_len += p.value.chars().count();
+                        res.push_str(&p.value)
+                    }
+                    _ => (),
+                }
+            }
+
+            max_len = std::cmp::max(max_len, curr_len);
+ 
+            // drop style
+            res.push_str(
+                &ansi_term::Style::new()
+                    .on(ansi_term::Color::Fixed(0))
+                    .suffix()
+                    .to_string(),
+            );
+
+            value.insert(*key, res);
+        }
+
+        Mode {
+            mode: InputMode::Normal,
+            len: max_len,
+            value,
         }
     }
-}
-
-impl Mode {
-    fn new(mode: InputMode) -> Mode {
-        Mode { mode, ..Default::default() }
-    }
-    fn set_mode(&mut self, mode: InputMode) {
+    pub fn set_mode(&mut self, mode: InputMode) {
         self.mode = mode;
     }
 }
