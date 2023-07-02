@@ -3,19 +3,19 @@ use zellij_tile::prelude::*;
 
 pub struct Config {
     pub layout: String,
-    pub mode_style: HashMap<InputMode, String>
+    pub mode: HashMap<InputMode, String>
 }
 
 impl Default for Config {
     fn default() -> Config {
         Config {
-            layout: "#[bg:black,fg:green,bold] Zellij #[fg:red](#S)#[default] #M ".to_string(),
-            mode_style: HashMap::from([
+            layout: "#[bg:black,fg:green,bold] Zellij #[default](#S)#[default] #M ".to_string(),
+            mode: HashMap::from([
                 (InputMode::Normal, "#[fg:green]NORMAL".to_string()),
                 (InputMode::Locked, "#[fg:red]LOCKED".to_string()),
                 (InputMode::Resize, "#[fg:orange]RESIZE".to_string()),
                 (InputMode::Pane, "#[fg:orange]PANE".to_string()),
-                (InputMode::Tab, "#[fg:orange]TABL".to_string()),
+                (InputMode::Tab, "#[fg:orange,bold]TAB".to_string()),
                 (InputMode::Scroll, "#[fg:orange]SCROLL".to_string()),
                 (InputMode::EnterSearch, "#[fg:orange]ENTSEARCH".to_string()),
                 (InputMode::Search, "#[fg:orange]SEARCH".to_string()),

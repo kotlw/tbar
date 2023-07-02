@@ -1,18 +1,18 @@
 mod component;
 mod config;
-mod style;
-mod tokenizer;
+mod parser;
 
 use zellij_tile::prelude::*;
-use zellij_tile_utils::style;
 
+use crate::component::Component;
 use crate::config::Config;
-use crate::tokenizer::{tokenize, Kind, Token};
+use crate::parser::parse;
 
 #[derive(Default)]
 struct State {
     config: Config,
     mode_info: ModeInfo,
+    components: Vec<Box<dyn Component>>,
 }
 
 register_plugin!(State);
@@ -20,11 +20,14 @@ register_plugin!(State);
 impl ZellijPlugin for State {
     fn load(&mut self) {
         self.config = Config::default();
+        self.components = parse(&self.config.layout);
         set_selectable(false);
         subscribe(&[EventType::ModeUpdate]);
     }
 
     fn update(&mut self, event: Event) -> bool {
+        let cfg = &self.config;
+        self.components.iter_mut().for_each(|x| x.update(&event, cfg));
         let mut should_render = false;
         match event {
             Event::ModeUpdate(mode_info) => {
@@ -39,43 +42,10 @@ impl ZellijPlugin for State {
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
-        let tokens = tokenize(&self.config.layout);
-        let mut components: Vec<Box<dyn component::Component>> = Vec::new();
-
-        let mut s = String::new();
-        let palette = self.mode_info.style.colors;
-        let mode_style = &self.config.mode_style;
-
-        for t in tokens.iter() {
-            components.push(match t.kind {
-                Kind::Text => Box::new(component::Text::from_token(t)),
-                Kind::Session => {
-                    let tok = Token::new(
-                        Kind::Text,
-                        self.mode_info.session_name.as_ref().unwrap().to_string(),
-                    );
-                    Box::new(component::Text::from_token(&tok))
-                }
-                Kind::Mode => Box::new(component::Mode::from_cfg(mode_style, palette)),
-                Kind::Style => Box::new(component::Style::from_token(t, palette)),
-            });
-        }
-
-        for c in components.iter() {
-            s.push_str(c.get());
-        }
-
-        // for component in components.iter() {
-        //     let rendered = match component.kind {
-        //         Kind::Text => Some(component.value.clone()),
-        //         Kind::Session => self.mode_info.session_name.clone(),
-        //         Kind::Mode => Some(mmode.clone()),
-        //         Kind::Style => Some(style::apply(&component.value, self.mode_info.style.colors)),
-        //     };
-        //     if let Some(r) = rendered {
-        //         s.push_str(&r);
-        //     }
-        // }
+        let s = self.components
+            .iter()
+            .map(|p| p.get())
+            .collect::<String>();
 
         print!("{}", s);
     }
