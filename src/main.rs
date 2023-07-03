@@ -27,7 +27,11 @@ impl ZellijPlugin for State {
 
     fn update(&mut self, event: Event) -> bool {
         let cfg = &self.config;
-        self.components.iter_mut().for_each(|x| x.update(&event, cfg));
+
+        self.components
+            .iter_mut()
+            .for_each(|x| x.update(&event, cfg));
+
         let mut should_render = false;
         match event {
             Event::ModeUpdate(mode_info) => {
@@ -41,11 +45,8 @@ impl ZellijPlugin for State {
         should_render
     }
 
-    fn render(&mut self, rows: usize, cols: usize) {
-        let s = self.components
-            .iter()
-            .map(|p| p.get())
-            .collect::<String>();
+    fn render(&mut self, _rows: usize, cols: usize) {
+        let s = self.components.iter().map(|p| p.get()).collect::<String>();
 
         print!("{}", s);
     }

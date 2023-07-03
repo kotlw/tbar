@@ -26,8 +26,8 @@ pub fn parse(layout: &String) -> Vec<Box<dyn Component>> {
         // then read text after '#' as different kind, repeat until end of the string
         if let Some(c) = iter.next() {
             match c {
-                'S' => res.push(Box::new(Session::new())),
-                'M' => res.push(Box::new(Mode::new())),
+                'S' => res.push(Box::new(Session::default())),
+                'M' => res.push(Box::new(Mode::default())),
                 '[' => {
                     let value = take_until(iter.by_ref(), ']');
                     let style = Style::new(value.clone());

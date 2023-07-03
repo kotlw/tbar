@@ -38,14 +38,6 @@ pub struct Session {
     name: String,
 }
 
-impl Session {
-    pub fn new() -> Session {
-        Session {
-            ..Default::default()
-        }
-    }
-}
-
 impl Component for Session {
     fn get(&self) -> &str {
         &self.name
@@ -156,19 +148,11 @@ impl Component for Style {
     }
 }
 
-// Style ----------------------------------------------------------------------
+// Mode -----------------------------------------------------------------------
 #[derive(Default)]
 pub struct Mode {
     value: String,
     len: usize,
-}
-
-impl Mode {
-    pub fn new() -> Mode {
-        Mode {
-            ..Default::default()
-        }
-    }
 }
 
 impl Component for Mode {
@@ -181,14 +165,19 @@ impl Component for Mode {
     }
 
     fn update(&mut self, event: &Event, config: &Config) {
+        let mut res = String::new();
+
         if let Event::ModeUpdate(mode_info) = event {
-            self.value = parse(&config.mode[&mode_info.mode])
-                .iter_mut()
-                .map(|x| {
-                    x.update(event, config);
-                    x.get()
-                })
-                .collect::<String>();
+            let mut curr_len = 0;
+
+            for c in parse(&config.mode[&mode_info.mode]).iter_mut() {
+                c.update(event, config);
+                curr_len += c.len();
+                res.push_str(&c.get());
+            }
+
+            self.value = res;
+            self.len = std::cmp::max(self.len, curr_len);
         }
     }
 }
