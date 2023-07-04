@@ -177,9 +177,9 @@ impl<'a> Parser<'a> {
         Ok(vec![Component::Text(res)])
     }
 
-    /// Returns Vec<Component> of layout if success, or Vec<Component> with error message. It needs
-    /// because parser could be used in different scenarious so it needs different error prefix.
-    pub fn parse(&mut self) -> Result<Vec<Component>, Component> {
+    /// Returns components to render. It will return vec![Component::Error] with details if it's failed
+    /// to parse.
+    pub fn expect_parse(&mut self, msg: &str) -> Vec<Component> {
         let mut res = Vec::new();
 
         while let Some((_, c)) = self.iter.peek() {
@@ -190,13 +190,20 @@ impl<'a> Parser<'a> {
                 }
                 _ => self.take_text(),
             };
+
             match component {
                 Ok(c) => res.extend(c),
-                Err((e, begin, end)) => {
-                    return Err(Component::Error(self.layout.to_string(), e, begin, end))
+                Err((hint, begin, end)) => {
+                    res = vec![Component::Error(
+                        self.layout.to_string(),
+                        msg.to_string() + &hint,
+                        begin,
+                        end,
+                    )];
+                    break;
                 }
             };
         }
-        Ok(res)
+        res
     }
 }

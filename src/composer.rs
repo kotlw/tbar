@@ -1,11 +1,13 @@
 use crate::config::Config;
-use crate::parser::{Color, Component, Style};
+use crate::parser::{Color, Component, Parser, Style};
+use std::collections::HashMap;
 use zellij_tile::prelude::*;
 
 #[derive(Default)]
 pub struct Composer {
-    config: Config,
     components: Vec<Component>,
+    modes: HashMap<InputMode, Vec<Component>>,
+    mode_len: usize,
 
     session_name: String,
     mode: InputMode,
@@ -14,9 +16,25 @@ pub struct Composer {
 
 impl Composer {
     pub fn new(config: Config, components: Vec<Component>) -> Composer {
+        let mut modes = HashMap::new();
+        let mut cmps = Vec::new();
+
+        for (k, v) in config.mode {
+            let components = Parser::new(&v).expect_parse("Error while parsing mode: ");
+            modes.insert(k, components);
+            for c in modes.get(&k).unwrap() {
+                match c {
+                    Component::Error(l, h, b, e) => {
+                        cmps.push(Component::Error(l.clone(), h.clone(), *b, *e))
+                    }
+                    _ => (),
+                }
+            }
+        }
+
         Composer {
-            config,
-            components,
+            components: if cmps.is_empty() { components } else { cmps },
+            modes,
             ..Default::default()
         }
     }
@@ -56,17 +74,50 @@ impl Composer {
         }
     }
 
+    /// Returns styled error message.
     fn render_error(
         &self,
         cols: usize,
         layout: &String,
         hint: &String,
-        begin: usize,
-        end: usize,
+        hbegin: usize,
+        hend: usize,
     ) -> String {
         let bg = self.render_style(&Style::Bg(Color::Red));
         let fg = self.render_style(&Style::Fg(Color::Black));
         let hl = self.render_style(&Style::Bg(Color::Yellow));
+
+        let layout_len = layout.chars().count();
+        let hint_len = hint.chars().count() + 2; // + 2 symbols ': '
+        let bounds = cols.saturating_sub(hint_len);
+
+        let window = bounds.saturating_sub(hend.saturating_sub(hbegin) + 6) / 2;
+        let begin = hbegin.saturating_sub(window);
+        let end = std::cmp::min(layout_len, hend.saturating_add(window));
+
+        let mut cols_left = cols.saturating_sub(hint_len + end.saturating_sub(begin));
+
+        let left = if begin > 0 {
+            cols_left = cols_left.saturating_sub(3);
+            "..."
+        } else {
+            cols_left = cols_left.saturating_sub(1);
+            "^"
+        };
+
+        let right = if end < layout_len {
+            cols_left = cols_left.saturating_sub(3);
+            "..."
+        } else {
+            cols_left = cols_left.saturating_sub(1);
+            "$"
+        };
+
+        let spacer = if cols_left > 0 {
+            " ".to_string().repeat(cols_left)
+        } else {
+            "".to_string()
+        };
 
         if cols <= hint.chars().count() + 8 {
             return format!(
@@ -80,39 +131,30 @@ impl Composer {
             );
         }
 
-        let layout_len = layout.chars().count();
-        let hint_len = hint.chars().count() + 2; // + 2 symbols ': '
-        let bounds = cols.saturating_sub(hint_len);
-
-        let window = bounds.saturating_sub(end.saturating_sub(begin) + 6) / 2;
-        let b = begin.saturating_sub(window);
-        let e = std::cmp::min(layout_len, end.saturating_add(window));
-
-        let layout_msg = format!(
-            "{}{}{}{}{}{}{}",
-            if b > 0 { "..." } else { "^" }.to_string(),
-            layout[b..begin].to_string(),
-            hl,
-            layout[begin..end].to_string(),
-            bg,
-            layout[end..e].to_string(),
-            if e < layout_len { "..." } else { "$" }.to_string()
-        );
-
-        let mut cols_left = cols.saturating_sub(hint_len + 2 + e.saturating_sub(b));
-        if b > 0 {
-            cols_left = cols_left.saturating_sub(2);
-        }
-        if e < layout_len {
-            cols_left = cols_left.saturating_sub(2);
-        }
-        let spacer = if cols_left > 0 {
-            " ".to_string().repeat(cols_left)
-        } else {
-            "".to_string()
-        };
+        let layout_msg = left.to_string()
+            + &layout[begin..hbegin]
+            + &hl
+            + &layout[hbegin..hend]
+            + &bg
+            + &layout[hend..end]
+            + &right;
 
         format!("{}{}{}: {}{}", bg, fg, hint, layout_msg, spacer)
+    }
+
+    fn render_mode(&self) -> String {
+        let mut res = String::new();
+        let cmps = &self.modes[&self.mode];
+
+        for c in cmps {
+            match c {
+                Component::Text(t) => res.push_str(t),
+                Component::Style(s) => res.push_str(&self.render_style(s)),
+                _ => () ,
+            };
+        }
+
+        res
     }
 
     fn render(&self, component: &Component, cols: usize) -> String {
@@ -120,7 +162,7 @@ impl Composer {
             Component::Text(t) => t.to_string(),
             Component::Style(s) => self.render_style(s),
             Component::Session => self.session_name.clone(),
-            Component::Mode => "{Mode}".to_string(),
+            Component::Mode => self.render_mode(),
             Component::Error(l, h, b, e) => self.render_error(cols, l, h, *b, *e),
         }
     }
