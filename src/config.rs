@@ -9,7 +9,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Config {
         Config {
-            layout: "#[bg:black,fg:green,bold] Zellij #[default](#S)#[default] #M ".to_string(),
+            layout: "#[fg:green,bold] Zellij #[q,default](#S)#[default] #M ".to_string(),
             mode: HashMap::from([
                 (InputMode::Normal, "#[fg:green]NORMAL".to_string()),
                 (InputMode::Locked, "#[fg:red]LOCKED".to_string()),
