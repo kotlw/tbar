@@ -56,12 +56,72 @@ impl Composer {
         }
     }
 
-    fn render(&self, component: &Component) -> String {
+    fn render_error(
+        &self,
+        cols: usize,
+        layout: &String,
+        hint: &String,
+        begin: usize,
+        end: usize,
+    ) -> String {
+        let bg = self.render_style(&Style::Bg(Color::Red));
+        let fg = self.render_style(&Style::Fg(Color::Black));
+        let hl = self.render_style(&Style::Bg(Color::Yellow));
+
+        if cols <= hint.chars().count() + 8 {
+            return format!(
+                "{}{}{}",
+                bg,
+                fg,
+                (hint.to_string() + ": ......")
+                    .chars()
+                    .take(cols)
+                    .collect::<String>()
+            );
+        }
+
+        let layout_len = layout.chars().count();
+        let hint_len = hint.chars().count() + 2; // + 2 symbols ': '
+        let bounds = cols.saturating_sub(hint_len);
+
+        let window = bounds.saturating_sub(end.saturating_sub(begin) + 6) / 2;
+        let b = begin.saturating_sub(window);
+        let e = std::cmp::min(layout_len, end.saturating_add(window));
+
+        let layout_msg = format!(
+            "{}{}{}{}{}{}{}",
+            if b > 0 { "..." } else { "^" }.to_string(),
+            layout[b..begin].to_string(),
+            hl,
+            layout[begin..end].to_string(),
+            bg,
+            layout[end..e].to_string(),
+            if e < layout_len { "..." } else { "$" }.to_string()
+        );
+
+        let mut cols_left = cols.saturating_sub(hint_len + 2 + e.saturating_sub(b));
+        if b > 0 {
+            cols_left = cols_left.saturating_sub(2);
+        }
+        if e < layout_len {
+            cols_left = cols_left.saturating_sub(2);
+        }
+        let spacer = if cols_left > 0 {
+            " ".to_string().repeat(cols_left)
+        } else {
+            "".to_string()
+        };
+
+        format!("{}{}{}: {}{}", bg, fg, hint, layout_msg, spacer)
+    }
+
+    fn render(&self, component: &Component, cols: usize) -> String {
         match component {
             Component::Text(t) => t.to_string(),
             Component::Style(s) => self.render_style(s),
             Component::Session => self.session_name.clone(),
             Component::Mode => "{Mode}".to_string(),
+            Component::Error(l, h, b, e) => self.render_error(cols, l, h, *b, *e),
         }
     }
 
@@ -93,7 +153,7 @@ impl Composer {
         let mut res = String::new();
 
         for c in self.components.iter() {
-            res.push_str(&self.render(c))
+            res.push_str(&self.render(c, cols))
         }
 
         res

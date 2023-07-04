@@ -8,6 +8,7 @@ pub enum Component {
     Style(Style),
     Session,
     Mode,
+    Error(String, String, usize, usize),
 }
 
 #[derive(Debug)]
@@ -49,6 +50,7 @@ impl<'a> Parser<'a> {
         Parser { layout, iter }
     }
 
+    /// Reads word from stream and select corresponding Color if exists, otherwise returns error.
     fn take_color(&mut self) -> Result<Color, (String, usize, usize)> {
         let mut color = String::with_capacity(8);
         let mut begin = self.layout.chars().count() - 1;
@@ -86,6 +88,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Return style as Vec<Component> or error with highlight coordinates if pattern unrecognized.
     fn take_styles(&mut self) -> Result<Vec<Component>, (String, usize, usize)> {
         let mut res = Vec::new();
         let mut s = String::new();
@@ -138,7 +141,7 @@ impl<'a> Parser<'a> {
         Err(("Bracket never closed".to_string(), begin, end))
     }
 
-    /// Returns component described after '#' symbol or error if unrecognized.
+    /// Returns component described after '#' symbol or error with higllight coordinates if unrecognized.
     fn take_specials(&mut self) -> Result<Vec<Component>, (String, usize, usize)> {
         let len = self.layout.chars().count();
         match self.iter.peek() {
@@ -174,29 +177,9 @@ impl<'a> Parser<'a> {
         Ok(vec![Component::Text(res)])
     }
 
-    /// Returns formated error message to render instead of plugin.
-    fn build_error(&mut self, hint: &str, hbegin: usize, hend: usize) -> Vec<Component> {
-        let window = 10;
-        let len = self.layout.chars().count();
-        let begin = std::cmp::max(0, hbegin as i32 - window) as usize;
-        let end = std::cmp::min(len as i32, hend as i32 + window) as usize;
-
-        vec![
-            Component::Style(Style::Fg(Color::Black)),
-            Component::Style(Style::Bg(Color::Red)),
-            Component::Text("Error: ".to_string()),
-            Component::Text(hint.to_string()),
-            Component::Text(if begin > 0 { ": ..." } else { ": ^" }.to_string()),
-            Component::Text(self.layout[begin..hbegin].to_string()),
-            Component::Style(Style::Bg(Color::Yellow)),
-            Component::Text(self.layout[hbegin..hend].to_string()),
-            Component::Style(Style::Bg(Color::Red)),
-            Component::Text(self.layout[hend..end].to_string()),
-            Component::Text(if end < len { "..." } else { "$" }.to_string()),
-        ]
-    }
-
-    pub fn parse(&mut self) -> Vec<Component> {
+    /// Returns Vec<Component> of layout if success, or Vec<Component> with error message. It needs
+    /// because parser could be used in different scenarious so it needs different error prefix.
+    pub fn parse(&mut self) -> Result<Vec<Component>, Component> {
         let mut res = Vec::new();
 
         while let Some((_, c)) = self.iter.peek() {
@@ -209,9 +192,11 @@ impl<'a> Parser<'a> {
             };
             match component {
                 Ok(c) => res.extend(c),
-                Err((e, begin, end)) => return self.build_error(&e, begin, end),
+                Err((e, begin, end)) => {
+                    return Err(Component::Error(self.layout.to_string(), e, begin, end))
+                }
             };
         }
-        res
+        Ok(res)
     }
 }
