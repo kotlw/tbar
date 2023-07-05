@@ -20,7 +20,9 @@ impl Composer {
         let mut cmps = Vec::new();
 
         for (k, v) in config.mode {
-            let components = Parser::new(&v).expect_parse("Error while parsing mode: ");
+            let components = Parser::new(&v)
+                .style_and_text_only()
+                .expect_parse("Error while parsing mode: ");
             modes.insert(k, components);
             for c in modes.get(&k).unwrap() {
                 match c {
@@ -120,6 +122,7 @@ impl Composer {
         };
 
         if cols <= hint.chars().count() + 8 {
+            let _dots = ".".to_string().repeat(hend.saturating_sub(hbegin));
             return format!(
                 "{}{}{}",
                 bg,
@@ -150,7 +153,7 @@ impl Composer {
             match c {
                 Component::Text(t) => res.push_str(t),
                 Component::Style(s) => res.push_str(&self.render_style(s)),
-                _ => () ,
+                _ => (),
             };
         }
 

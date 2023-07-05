@@ -2,13 +2,45 @@ use core::iter::Enumerate;
 use core::str::Chars;
 use std::iter::Peekable;
 
+const UNEXPECTED_TOKEN: String = "Unexpected token".to_string();
+const UNKNOWN_COLOR: String = "Unknown clolr".to_string();
+
 #[derive(Debug)]
-pub enum Component {
+struct ParseError<'a> {
+    hint: String,
+    layout: &'a str,
+    hl_begin: usize,
+    hl_end: usize,
+}
+
+impl<'a> ParseError<'a> {
+    fn prepend_hint(&mut self, msg: &str) -> Self {
+        self.hint.insert_str(0, msg);
+        *self
+    }
+
+    fn as_component(&self) -> Component {
+        Component::ParseError {
+            layout: self.layout,
+            hint: self.hint,
+            hl_begin: self.hl_begin,
+            hl_end: self.hl_end,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Component<'a> {
     Text(String),
     Style(Style),
     Session,
     Mode,
-    Error(String, String, usize, usize),
+    ParseError {
+        hint: String,
+        layout: &'a str,
+        hl_begin: usize,
+        hl_end: usize,
+    },
 }
 
 #[derive(Debug)]
@@ -42,32 +74,61 @@ pub enum Color {
 pub struct Parser<'a> {
     layout: &'a str,
     iter: Peekable<Enumerate<Chars<'a>>>,
+    style_and_text_only: bool,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(layout: &'a str) -> Parser<'a> {
         let iter = layout.chars().enumerate().peekable();
-        Parser { layout, iter }
+        Parser {
+            layout,
+            iter,
+            style_and_text_only: false,
+        }
+    }
+
+    fn err(&self, hint: String, hl_begin: usize, hl_end: usize) -> &mut ParseError {
+        &mut ParseError {
+            layout: &self.layout,
+            hint,
+            hl_begin,
+            hl_end,
+        }
     }
 
     /// Reads word from stream and select corresponding Color if exists, otherwise returns error.
-    fn take_color(&mut self) -> Result<Color, (String, usize, usize)> {
+    fn take_color(&mut self) -> Result<Color, &mut ParseError> {
         let mut color = String::with_capacity(8);
-        let mut begin = self.layout.chars().count() - 1;
-        let mut end = self.layout.chars().count();
+        let mut hl_end = self.layout.chars().count();
 
         while let Some((i, c)) = self.iter.peek() {
-            if begin > *i {
-                begin = *i;
-            }
-            end = *i;
             if !c.is_alphanumeric() {
                 break;
             }
+            hl_end = *i;
             color.push(*c);
             self.iter.next();
         }
 
+        while let Some((i, c)) = self.iter.peek() {
+            if c.is_alphanumeric() {
+                hl_end = *i;
+                color.push(*c);
+                self.iter.next();
+            } else {
+                break;
+            }
+        }
+
+        while self.iter.peek().is_some_and(|(_, c)| c.is_alphanumeric()) {
+            if let Some((i, c)) = self.iter.peek() {
+                hl_end = *i;
+                color.push(*c);
+                self.iter.next();
+            }
+        }
+
+        let hl_begin = hl_end.saturating_sub(color.chars().count());
         match color.as_str() {
             "black" => Ok(Color::Black),
             "red" => Ok(Color::Red),
@@ -84,21 +145,43 @@ impl<'a> Parser<'a> {
             "silver" => Ok(Color::Silver),
             "pink" => Ok(Color::Pink),
             "brown" => Ok(Color::Brown),
-            _ => Err(("Unknown color".to_string(), begin, end)),
+            _ => Err(self.err(UNKNOWN_COLOR, hl_begin, hl_end)),
+        }
+    }
+
+    fn take_color_style(&self, prefix: String) -> Result<Style, &mut ParseError> {
+        self.iter.next(); // skip ':'
+        match prefix.as_str() {
+            "bg" => Ok(Style::Bg(self.take_color()?)),
+            "fg" => Ok(Style::Fg(self.take_color()?)),
+            _ => Err(self.err(UNEXPECTED_TOKEN, 1, 1)),
         }
     }
 
     /// Return style as Vec<Component> or error with highlight coordinates if pattern unrecognized.
-    fn take_styles(&mut self) -> Result<Vec<Component>, (String, usize, usize)> {
+    fn take_styles(&mut self) -> Result<Vec<Component>, &mut ParseError> {
         let mut res = Vec::new();
-        let mut s = String::new();
-        let mut begin = self.layout.chars().count() - 1;
-        let mut end = self.layout.chars().count();
+        let mut prefix = String::new();
+        let mut hl_begin = self.layout.chars().count() - 1;
+
+        if let Some((i, _)) = self.iter.next() {
+            // skip '['
+            if hl_begin > i {
+                hl_begin = i
+            }
+        }
 
         while let Some((i, c)) = self.iter.peek() {
-            if begin > *i {
-                begin = *i;
+            match *c {
+                ':' => res.push(self.take_color_style?(prefix)),
+                _ => {
+                    prefix.push(*c);
+                    self.iter.next();
+                }
             }
+        }
+
+        while let Some((i, c)) = self.iter.peek() {
             end = *i;
             if *c == ':' {
                 self.iter.next();
@@ -142,68 +225,60 @@ impl<'a> Parser<'a> {
     }
 
     /// Returns component described after '#' symbol or error with higllight coordinates if unrecognized.
-    fn take_specials(&mut self) -> Result<Vec<Component>, (String, usize, usize)> {
+    fn take_specials(&mut self) -> Result<Vec<Component>, &mut ParseError> {
+        self.iter.next(); // skip '#' symbol
+
         let len = self.layout.chars().count();
-        match self.iter.peek() {
-            Some((_, 'S')) => {
-                self.iter.next(); // skip 'S' symbol
-                Ok(vec![Component::Session])
+        let res = match self.iter.peek() {
+            Some((_, 'S')) if !self.style_and_text_only => Ok(vec![Component::Session]),
+            Some((_, 'M')) if !self.style_and_text_only => Ok(vec![Component::Mode]),
+            Some((_, '[')) => Ok(self.take_styles()?),
+            Some((hl_begin, _)) => Err(self.err(UNEXPECTED_TOKEN, *hl_begin, *hl_begin + 1)),
+            None => Err(self.err(UNEXPECTED_TOKEN, len - 1, len)),
+        };
+
+        self.iter.next(); // it should be 'S' | 'M' | ']' ...
+        res
+    }
+
+    /// Returns text untill special symbol '#' and moves iterator peek to it. Wrap into Vec because
+    /// parsing style could return several components.
+    fn take_text(&mut self, start: &usize) -> Vec<Component> {
+        let mut res = String::new();
+        loop {
+            match self.iter.peek() {
+                Some((_, c)) if *c != '#' => res.push(*c),
+                _ => break vec![Component::Text(res)],
             }
-            Some((_, 'M')) => {
-                self.iter.next(); // skip 'M' symbol
-                Ok(vec![Component::Mode])
-            }
-            Some((_, '[')) => {
-                self.iter.next(); // skip '[' symbol
-                Ok(self.take_styles()?)
-            }
-            Some((begin, _)) => Err(("Unexpected token".to_string(), *begin, *begin + 1)),
-            // handle '#' if it's the last symbol
-            None => Err(("Unexpected token".to_string(), len - 1, len)),
+            self.iter.next();
         }
     }
 
-    /// Returns text untill special symbol '#' and moves iterator peek to it.
-    fn take_text(&mut self) -> Result<Vec<Component>, (String, usize, usize)> {
-        let mut res = String::new();
+    pub fn parse(&mut self) -> Result<Vec<Component>, &mut ParseError> {
+        let mut res = Vec::new();
 
-        while let Some((_, c)) = self.iter.peek() {
-            if *c == '#' {
-                break;
-            }
-            res.push(*c);
-            self.iter.next();
+        while let Some((i, c)) = self.iter.peek() {
+            res.extend(match c {
+                '#' => self.take_specials()?,
+                _ => self.take_text(i),
+            });
         }
-        Ok(vec![Component::Text(res)])
+
+        Ok(res)
     }
 
     /// Returns components to render. It will return vec![Component::Error] with details if it's failed
     /// to parse.
     pub fn expect_parse(&mut self, msg: &str) -> Vec<Component> {
-        let mut res = Vec::new();
-
-        while let Some((_, c)) = self.iter.peek() {
-            let component = match c {
-                '#' => {
-                    self.iter.next();
-                    self.take_specials()
-                }
-                _ => self.take_text(),
-            };
-
-            match component {
-                Ok(c) => res.extend(c),
-                Err((hint, begin, end)) => {
-                    res = vec![Component::Error(
-                        self.layout.to_string(),
-                        msg.to_string() + &hint,
-                        begin,
-                        end,
-                    )];
-                    break;
-                }
-            };
+        match self.parse() {
+            Ok(c) => c,
+            Err(e) => vec![e.prepend_hint(msg).as_component()],
         }
-        res
+    }
+
+    /// Specify to parse only text and style, used for parsing mode.
+    pub fn style_and_text_only(&mut self) -> &mut Self {
+        self.style_and_text_only = true;
+        self
     }
 }
