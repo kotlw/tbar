@@ -26,9 +26,17 @@ impl Composer {
             modes.insert(k, components);
             for c in modes.get(&k).unwrap() {
                 match c {
-                    Component::Error(l, h, b, e) => {
-                        cmps.push(Component::Error(l.clone(), h.clone(), *b, *e))
-                    }
+                    Component::ParseError {
+                        hint,
+                        layout,
+                        hl_begin,
+                        hl_end,
+                    } => cmps.push(Component::ParseError {
+                        hint: hint.to_string(),
+                        layout: layout.to_string(),
+                        hl_begin: *hl_begin,
+                        hl_end: *hl_end,
+                    }),
                     _ => (),
                 }
             }
@@ -80,8 +88,8 @@ impl Composer {
     fn render_error(
         &self,
         cols: usize,
-        layout: &String,
         hint: &String,
+        layout: &String,
         hbegin: usize,
         hend: usize,
     ) -> String {
@@ -166,7 +174,12 @@ impl Composer {
             Component::Style(s) => self.render_style(s),
             Component::Session => self.session_name.clone(),
             Component::Mode => self.render_mode(),
-            Component::Error(l, h, b, e) => self.render_error(cols, l, h, *b, *e),
+            Component::ParseError {
+                hint,
+                layout,
+                hl_begin,
+                hl_end,
+            } => self.render_error(cols, hint, layout, *hl_begin, *hl_end),
         }
     }
 

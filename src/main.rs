@@ -5,7 +5,7 @@ mod parser;
 use zellij_tile::prelude::*;
 
 use crate::config::Config;
-use crate::parser::{Parser, Component, Style, Color};
+use crate::parser::Parser;
 use crate::composer::Composer;
 
 #[derive(Default)]

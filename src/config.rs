@@ -11,7 +11,7 @@ impl Default for Config {
         Config {
             layout: "#[fg:green,bold] Zellij #[default](#S)#[default] #M ".to_string(),
             mode: HashMap::from([
-                (InputMode::Normal, "#[fg:grewen]#NORMAL".to_string()),
+                (InputMode::Normal, "#[fg:green]NORMAL".to_string()),
                 (InputMode::Locked, "#[fg:red]LOCKED".to_string()),
                 (InputMode::Resize, "#[fg:orange]RESIZE".to_string()),
                 (InputMode::Pane, "#[fg:orange]PANE".to_string()),
