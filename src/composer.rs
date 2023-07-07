@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::error::ErrorRenderer;
 use crate::mode::ModeRenderer;
 use crate::style::{Style, StyleRenderer};
+use crate::tab::TabRenderer;
 use zellij_tile::prelude::*;
 
 #[derive(Debug)]
@@ -10,6 +11,9 @@ pub enum Component {
     Style(Style),
     Session,
     Mode,
+    Tab,
+    TabIndex,
+    TabName,
     ParseError {
         hint: String,
         layout: String,
@@ -25,6 +29,7 @@ pub struct Composer {
     session_name: String,
     style_renderer: StyleRenderer,
     mode_renderer: ModeRenderer,
+    tab_renderer: TabRenderer,
     error_renderer: ErrorRenderer,
 }
 
@@ -51,6 +56,7 @@ impl Composer {
             Component::Style(s) => self.style_renderer.render(s),
             Component::Session => self.session_name.clone(),
             Component::Mode => self.mode_renderer.render(),
+            Component::Tab => self.tab_renderer.render(),
             Component::ParseError {
                 hint,
                 layout,
@@ -59,6 +65,7 @@ impl Composer {
             } => self
                 .error_renderer
                 .render(cols, hint, layout, *hl_begin, *hl_end),
+            _ => "".to_string()
         }
     }
 
@@ -80,6 +87,10 @@ impl Composer {
         should_render |= self.style_renderer.update(palette);
         should_render |= self.error_renderer.update(palette);
         should_render
+    }
+
+    pub fn update_tab(&mut self, tabs: Vec<TabInfo>) -> bool {
+        self.tab_renderer.update(tabs)
     }
 
     pub fn compose(&self, cols: usize) -> String {

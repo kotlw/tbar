@@ -1,9 +1,10 @@
 mod composer;
 mod config;
+mod error;
 mod mode;
 mod parser;
 mod style;
-mod error;
+mod tab;
 
 use zellij_tile::prelude::*;
 
@@ -22,15 +23,16 @@ impl ZellijPlugin for State {
     fn load(&mut self) {
         // it will be possible to parse zellij config in the future
         let cfg = Config::default();
-        let components = Parser::new(&cfg.layout).expect_parse("Error parsing layout: ");
+        let components = Parser::new(&cfg.layout, "[SMT").expect_parse("Error parsing layout: ");
         self.composer = Composer::new(&cfg, components);
         set_selectable(false);
-        subscribe(&[EventType::ModeUpdate]);
+        subscribe(&[EventType::ModeUpdate, EventType::TabUpdate]);
     }
 
     fn update(&mut self, event: Event) -> bool {
         match event {
             Event::ModeUpdate(mode_info) => self.composer.update_mode(mode_info),
+            Event::TabUpdate(tabs) => self.composer.update_tab(tabs),
             _ => {
                 eprintln!("Got unrecognized event: {:?}", event);
                 false

@@ -1,6 +1,6 @@
 use crate::composer::Component;
 use crate::parser::Parser;
-use crate::style::{StyleRenderer, Style};
+use crate::style::{Style, StyleRenderer};
 use std::collections::HashMap;
 use zellij_tile::prelude::*;
 
@@ -20,9 +20,7 @@ impl ModeRenderer {
 
         // Parse Modes.
         for (k, v) in modes_config {
-            let mode_components = Parser::new(&v)
-                .style_and_text_only()
-                .expect_parse("Error parsing mode: ");
+            let mode_components = Parser::new(&v, "[").expect_parse("Error parsing mode: ");
 
             modes.insert(*k, mode_components);
 

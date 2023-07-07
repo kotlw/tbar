@@ -1,8 +1,8 @@
+use crate::composer::Component;
+use crate::style::{Color, Style};
 use core::iter::Enumerate;
 use core::str::Chars;
 use std::iter::Peekable;
-use crate::style::{Style, Color};
-use crate::composer::Component;
 
 #[derive(Debug)]
 struct Error {
@@ -67,24 +67,19 @@ pub struct Parser<'a> {
     layout: &'a str,
     len: usize,
     iter: Peekable<Enumerate<Chars<'a>>>,
-    style_and_text_only: bool,
+    allowed_specials: &'a str,
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(layout: &'a str) -> Parser<'a> {
+    pub fn new(layout: &'a str, allowed_specials: &'a str) -> Parser<'a> {
         let iter = layout.chars().enumerate().peekable();
         let len = layout.chars().count();
         Parser {
             layout,
             len,
             iter,
-            style_and_text_only: false,
+            allowed_specials,
         }
-    }
-
-    pub fn style_and_text_only(&mut self) -> &mut Self {
-        self.style_and_text_only = true;
-        self
     }
 
     /// Parse style components.
@@ -128,9 +123,12 @@ impl<'a> Parser<'a> {
         self.iter.next(); // skip '#' symbol
 
         let res = match self.iter.peek() {
-            Some((_, 'S')) if !self.style_and_text_only => Ok(vec![Component::Session]),
-            Some((_, 'M')) if !self.style_and_text_only => Ok(vec![Component::Mode]),
-            Some((_, '[')) => Ok(self.parse_styles()?),
+            Some((_, 'S')) if self.allowed_specials.contains('S') => Ok(vec![Component::Session]),
+            Some((_, 'M')) if self.allowed_specials.contains('M') => Ok(vec![Component::Mode]),
+            Some((_, 'T')) if self.allowed_specials.contains('T') => Ok(vec![Component::Tab]),
+            Some((_, 'I')) if self.allowed_specials.contains('I') => Ok(vec![Component::TabIndex]),
+            Some((_, 'W')) if self.allowed_specials.contains('W') => Ok(vec![Component::TabName]),
+            Some((_, '[')) if self.allowed_specials.contains('[') => Ok(self.parse_styles()?),
             Some((hl_begin, _)) => Err(Error::new("Unexpected token: ", *hl_begin, *hl_begin + 1)),
             None => Err(Error::new("Unexpected token: ", self.len - 1, self.len)),
         };

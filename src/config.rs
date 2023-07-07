@@ -3,13 +3,15 @@ use zellij_tile::prelude::*;
 
 pub struct Config {
     pub layout: String,
-    pub mode: HashMap<InputMode, String>
+    pub mode: HashMap<InputMode, String>,
+    pub tab: String,
+    pub active_tab: String,
 }
 
 impl Default for Config {
     fn default() -> Config {
         Config {
-            layout: "#[fg:green,bold] Zellij #[default](#S)#[default] #M ".to_string(),
+            layout: "#[fg:green,bold] Zellij #[default](#S)#[default] #M | #T".to_string(),
             mode: HashMap::from([
                 (InputMode::Normal, "#[fg:green]NORMAL".to_string()),
                 (InputMode::Locked, "#[fg:red]LOCKED".to_string()),
@@ -26,6 +28,8 @@ impl Default for Config {
                 (InputMode::Prompt, "#[fg:orange]PROMPT".to_string()),
                 (InputMode::Tmux, "#[fg:orange]TMUX".to_string()),
             ]),
+            tab: "#[bg:white,fg:black] #I #W".to_string(),
+            active_tab: "#[bg:green,fg:black] #I #W".to_string(),
         }
     }
 }
