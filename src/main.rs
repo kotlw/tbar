@@ -19,8 +19,8 @@ impl ZellijPlugin for State {
     fn load(&mut self) {
         // it will be possible to parse zellij config in the future
         let cfg = Config::default();
-        let components = Parser::new(&cfg.layout).expect_parse("Error while parsing layout: ");
-        self.composer = Composer::new(cfg, components);
+        let components = Parser::new(&cfg.layout).expect_parse("Error parsing layout: ");
+        self.composer = Composer::new(&cfg, components);
         set_selectable(false);
         subscribe(&[EventType::ModeUpdate]);
     }

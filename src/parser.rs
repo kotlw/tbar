@@ -3,7 +3,7 @@ use core::str::Chars;
 use std::iter::Peekable;
 
 #[derive(Debug)]
-pub struct Error {
+struct Error {
     hint: String,
     hl_begin: usize,
     hl_end: usize,
@@ -129,7 +129,7 @@ impl<'a> Parser<'a> {
     /// Parse style components.
     fn parse_styles(&mut self) -> Result<Vec<Component>, Error> {
         let mut res = Vec::new();
-        let bracket_starts = self.iter.next().map(|(i, _)| i).unwrap_or(1); // skips '['
+        let hl_begin = self.iter.next().map(|(i, _)| i).unwrap_or(1); // skips '['
 
         loop {
             let token = self.take_until_any(",]#");
@@ -143,13 +143,7 @@ impl<'a> Parser<'a> {
                         // style parsed and bracket is closed
                         Some((_, ']')) => return Ok(res),
                         // style parsed but bracket is not closed
-                        _ => {
-                            return Err(Error::new(
-                                "Unclosed bracket: ",
-                                bracket_starts,
-                                bracket_starts + 1,
-                            ))
-                        }
+                        _ => return Err(Error::new("Unclosed bracket: ", hl_begin, hl_begin + 12)),
                     };
                 }
                 Err(e) => {
@@ -160,11 +154,7 @@ impl<'a> Parser<'a> {
                         }
                         // style not parsed because of unexpected '#' or end of the line
                         Some((_, '#')) | _ => {
-                            return Err(Error::new(
-                                "Unclosed bracket: ",
-                                bracket_starts,
-                                bracket_starts + 1,
-                            ))
+                            return Err(Error::new("Unclosed bracket: ", hl_begin, hl_begin + 1))
                         }
                     }
                 }
@@ -201,7 +191,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parsing entrypoint, decides to parse text or special tokens.
-    pub fn parse(&mut self) -> Result<Vec<Component>, Error> {
+    fn parse(&mut self) -> Result<Vec<Component>, Error> {
         let mut res = Vec::new();
 
         while let Some((_, c)) = self.iter.peek() {
@@ -217,14 +207,13 @@ impl<'a> Parser<'a> {
     /// Returns components to render. It will return vec![Component::Error] with details if
     /// it's failed to parse.
     pub fn expect_parse(&mut self, msg: &str) -> Vec<Component> {
-        match self.parse() {
-            Ok(c) => c,
-            Err(e) => vec![Component::ParseError {
+        self.parse().unwrap_or_else(|e| {
+            vec![Component::ParseError {
                 layout: self.layout.to_string(),
                 hint: msg.to_string() + &e.hint,
                 hl_begin: e.hl_begin,
                 hl_end: e.hl_end,
-            }],
-        }
+            }]
+        })
     }
 }

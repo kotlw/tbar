@@ -1,7 +1,49 @@
 use crate::config::Config;
 use crate::parser::{Color, Component, Parser, Style};
+use std::cmp;
 use std::collections::HashMap;
 use zellij_tile::prelude::*;
+
+fn parse_modes(
+    config: &Config,
+) -> Result<(HashMap<InputMode, Vec<Component>>, usize), Vec<Component>> {
+    let mut res = HashMap::new();
+    let mut len = 0;
+
+    // Parse Modes.
+    for (k, v) in &config.mode {
+        let components = Parser::new(&v)
+            .style_and_text_only()
+            .expect_parse("Error parsing mode: ");
+
+        res.insert(*k, components);
+
+        // Catching errors in modes config and calculating component len.
+        if let Some(components) = res.get(&k) {
+            for c in components {
+                match c {
+                    Component::ParseError {
+                        hint,
+                        layout,
+                        hl_begin,
+                        hl_end,
+                    } => {
+                        return Err(vec![Component::ParseError {
+                            hint: hint.to_string(),
+                            layout: layout.to_string(),
+                            hl_begin: *hl_begin,
+                            hl_end: *hl_end,
+                        }]);
+                    }
+                    Component::Text(t) => len = cmp::max(len, t.chars().count()),
+                    _ => (),
+                }
+            }
+        }
+    }
+
+    Ok((res, len))
+}
 
 #[derive(Default)]
 pub struct Composer {
@@ -15,36 +57,23 @@ pub struct Composer {
 }
 
 impl Composer {
-    pub fn new(config: Config, components: Vec<Component>) -> Composer {
+    pub fn new(config: &Config, components: Vec<Component>) -> Composer {
+        let mut components = components;
         let mut modes = HashMap::new();
-        let mut cmps = Vec::new();
+        let mut mode_len = 0;
 
-        for (k, v) in config.mode {
-            let components = Parser::new(&v)
-                .style_and_text_only()
-                .expect_parse("Error while parsing mode: ");
-            modes.insert(k, components);
-            for c in modes.get(&k).unwrap() {
-                match c {
-                    Component::ParseError {
-                        hint,
-                        layout,
-                        hl_begin,
-                        hl_end,
-                    } => cmps.push(Component::ParseError {
-                        hint: hint.to_string(),
-                        layout: layout.to_string(),
-                        hl_begin: *hl_begin,
-                        hl_end: *hl_end,
-                    }),
-                    _ => (),
-                }
+        match parse_modes(config) {
+            Ok((m, l)) => {
+                modes = m;
+                mode_len = l
             }
+            Err(c) => components = c,
         }
 
         Composer {
-            components: if cmps.is_empty() { components } else { cmps },
+            components,
             modes,
+            mode_len,
             ..Default::default()
         }
     }
@@ -90,74 +119,56 @@ impl Composer {
         cols: usize,
         hint: &String,
         layout: &String,
-        hbegin: usize,
-        hend: usize,
+        hl_begin: usize,
+        hl_end: usize,
     ) -> String {
-        let bg = self.render_style(&Style::Bg(Color::Red));
-        let fg = self.render_style(&Style::Fg(Color::Black));
-        let hl = self.render_style(&Style::Bg(Color::Yellow));
+        let bg_color = self.render_style(&Style::Bg(Color::Red));
+        let fg_color = self.render_style(&Style::Fg(Color::Black));
+        let hl_color = self.render_style(&Style::Bg(Color::Yellow));
 
         let layout_len = layout.chars().count();
-        let hint_len = hint.chars().count() + 2; // + 2 symbols ': '
-        let bounds = cols.saturating_sub(hint_len);
+        let hint_len = hint.chars().count();
+        let hl_len = hl_end.saturating_sub(hl_begin);
+        let layout_bounds = cols.saturating_sub(hint_len);
 
-        let window = bounds.saturating_sub(hend.saturating_sub(hbegin) + 6) / 2;
-        let begin = hbegin.saturating_sub(window);
-        let end = std::cmp::min(layout_len, hend.saturating_add(window));
+        // Calculate layout window beginning and end
+        let offset = layout_bounds.saturating_sub(hl_len + 6) / 2;
+        let layout_begin = hl_begin.saturating_sub(offset);
+        let layout_end = cmp::min(layout_len, hl_end.saturating_add(offset));
 
-        let mut cols_left = cols.saturating_sub(hint_len + end.saturating_sub(begin));
+        // Setup layout wrapping strings
+        let layout_left = if layout_begin > 0 { "..." } else { "^" };
+        let layout_right = if layout_end < layout_len { "..." } else { "$" };
 
-        let left = if begin > 0 {
-            cols_left = cols_left.saturating_sub(3);
-            "..."
-        } else {
-            cols_left = cols_left.saturating_sub(1);
-            "^"
+        // Calculate spacer len. It to fill bar with color till the end of the string.
+        let visible_layout_len = layout_end.saturating_sub(layout_begin);
+        let layout_wrapps_len = layout_left.chars().count() + layout_right.chars().count();
+        let spacer_len = cols.saturating_sub(hint_len + visible_layout_len + layout_wrapps_len);
+        let spacer = " ".repeat(spacer_len);
+
+        // Squeeze highlighted text if needed.
+        let squeeze_size = (hint_len + hl_len + 6).saturating_sub(cols);
+        let hl_end_squeezed = cmp::max(hl_begin, hl_end.saturating_sub(squeeze_size));
+        let mut highlight = hl_color.to_string() + &layout[hl_begin..hl_end_squeezed] + &bg_color;
+
+        // Calculate offset (len of non displayable chars).
+        let mut offset = bg_color.chars().count() + hl_color.chars().count();
+        if squeeze_size == hl_begin {
+            offset = 0;
+            highlight = "".to_string();
         };
 
-        let right = if end < layout_len {
-            cols_left = cols_left.saturating_sub(3);
-            "..."
-        } else {
-            cols_left = cols_left.saturating_sub(1);
-            "$"
-        };
+        let before_hl = layout_left.to_string() + &layout[layout_begin..hl_begin];
+        let after_hl = layout[hl_end..layout_end].to_string() + &layout_right;
+        let msg = hint.to_string() + &before_hl + &highlight + &after_hl + &spacer;
 
-        let spacer = if cols_left > 0 {
-            " ".to_string().repeat(cols_left)
-        } else {
-            "".to_string()
-        };
-
-        if cols <= hint.chars().count() + 8 {
-            let _dots = ".".to_string().repeat(hend.saturating_sub(hbegin));
-            return format!(
-                "{}{}{}",
-                bg,
-                fg,
-                (hint.to_string() + ": ......")
-                    .chars()
-                    .take(cols)
-                    .collect::<String>()
-            );
-        }
-
-        let layout_msg = left.to_string()
-            + &layout[begin..hbegin]
-            + &hl
-            + &layout[hbegin..hend]
-            + &bg
-            + &layout[hend..end]
-            + &right;
-
-        format!("{}{}{}: {}{}", bg, fg, hint, layout_msg, spacer)
+        bg_color + &fg_color + &msg.chars().take(cols + offset).collect::<String>()
     }
 
     fn render_mode(&self) -> String {
         let mut res = String::new();
-        let cmps = &self.modes[&self.mode];
 
-        for c in cmps {
+        for c in &self.modes[&self.mode] {
             match c {
                 Component::Text(t) => res.push_str(t),
                 Component::Style(s) => res.push_str(&self.render_style(s)),
