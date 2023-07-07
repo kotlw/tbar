@@ -1,6 +1,8 @@
 use core::iter::Enumerate;
 use core::str::Chars;
 use std::iter::Peekable;
+use crate::style::{Style, Color};
+use crate::composer::Component;
 
 #[derive(Debug)]
 struct Error {
@@ -17,47 +19,6 @@ impl Error {
             hl_end,
         }
     }
-}
-
-#[derive(Debug)]
-pub enum Component {
-    Text(String),
-    Style(Style),
-    Session,
-    Mode,
-    ParseError {
-        hint: String,
-        layout: String,
-        hl_begin: usize,
-        hl_end: usize,
-    },
-}
-
-#[derive(Debug)]
-pub enum Style {
-    Bg(Color),
-    Fg(Color),
-    Bold,
-    Default,
-}
-
-#[derive(Debug)]
-pub enum Color {
-    Black,
-    Red,
-    Green,
-    Yellow,
-    Blue,
-    Magenta,
-    Cyan,
-    White,
-    Orange,
-    Gray,
-    Purple,
-    Gold,
-    Silver,
-    Pink,
-    Brown,
 }
 
 /// Parse color.

@@ -1,12 +1,15 @@
 mod composer;
 mod config;
+mod mode;
 mod parser;
+mod style;
+mod error;
 
 use zellij_tile::prelude::*;
 
+use crate::composer::Composer;
 use crate::config::Config;
 use crate::parser::Parser;
-use crate::composer::Composer;
 
 #[derive(Default)]
 struct State {
@@ -26,7 +29,13 @@ impl ZellijPlugin for State {
     }
 
     fn update(&mut self, event: Event) -> bool {
-        self.composer.update(event)
+        match event {
+            Event::ModeUpdate(mode_info) => self.composer.update_mode(mode_info),
+            _ => {
+                eprintln!("Got unrecognized event: {:?}", event);
+                false
+            }
+        }
     }
 
     fn render(&mut self, _rows: usize, cols: usize) {
