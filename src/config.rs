@@ -1,11 +1,11 @@
 use std::collections::HashMap;
+use crate::tab::TabState;
 use zellij_tile::prelude::*;
 
 pub struct Config {
     pub layout: String,
     pub mode: HashMap<InputMode, String>,
-    pub tab: String,
-    pub active_tab: String,
+    pub tab: HashMap<TabState, String>,
 }
 
 impl Default for Config {
@@ -28,8 +28,12 @@ impl Default for Config {
                 (InputMode::Prompt, "#[fg:orange]PROMPT".to_string()),
                 (InputMode::Tmux, "#[fg:orange]TMUX".to_string()),
             ]),
-            tab: "#[bg:white,fg:black] #I #W".to_string(),
-            active_tab: "#[bg:green,fg:black] #I #W".to_string(),
+            tab: HashMap::from([
+                (TabState::Inactive, "#[bg:white,fg:black] #I #N ".to_string()),
+                (TabState::Active, "#[bg:green,fg:black] #I #N ".to_string()),
+                (TabState::InactiveSync, "#[bg:white,fg:black] #I #N (Sync) ".to_string()),
+                (TabState::ActiveSync, "#[bg:green,fg:black] #I #N (Sync) ".to_string()),
+            ]),
         }
     }
 }

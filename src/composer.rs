@@ -12,8 +12,8 @@ pub enum Component {
     Session,
     Mode,
     Tab,
-    TabIndex,
-    TabName,
+    Index,
+    Name,
     ParseError {
         hint: String,
         layout: String,
@@ -37,15 +37,22 @@ impl Composer {
     pub fn new(config: &Config, components: Vec<Component>) -> Composer {
         let mut components = components;
         let mut mode_renderer = ModeRenderer::default();
+        let mut tab_renderer = TabRenderer::default();
 
         match ModeRenderer::new(&config.mode) {
             Ok(m) => mode_renderer = m,
             Err(c) => components = c,
         }
 
+        match TabRenderer::new(&config.tab) {
+            Ok(t) => tab_renderer = t,
+            Err(c) => components = c,
+        }
+
         Composer {
             components,
             mode_renderer,
+            tab_renderer,
             ..Default::default()
         }
     }
@@ -65,7 +72,7 @@ impl Composer {
             } => self
                 .error_renderer
                 .render(cols, hint, layout, *hl_begin, *hl_end),
-            _ => "".to_string()
+            _ => "".to_string(),
         }
     }
 
@@ -85,12 +92,13 @@ impl Composer {
         should_render |= self.update_session_name(mode_info.session_name);
         should_render |= self.mode_renderer.update(mode_info.mode, palette);
         should_render |= self.style_renderer.update(palette);
+        should_render |= self.tab_renderer.update_mode(mode_info.mode, palette);
         should_render |= self.error_renderer.update(palette);
         should_render
     }
 
     pub fn update_tab(&mut self, tabs: Vec<TabInfo>) -> bool {
-        self.tab_renderer.update(tabs)
+        self.tab_renderer.update_tabs(tabs)
     }
 
     pub fn compose(&self, cols: usize) -> String {

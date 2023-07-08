@@ -7,7 +7,7 @@ use zellij_tile::prelude::*;
 #[derive(Default)]
 pub struct ModeRenderer {
     mode: InputMode,
-    modes: HashMap<InputMode, Vec<Component>>,
+    parsed_modes: HashMap<InputMode, Vec<Component>>,
     mode_len: usize,
 
     style_renderer: StyleRenderer,
@@ -15,17 +15,16 @@ pub struct ModeRenderer {
 
 impl ModeRenderer {
     pub fn new(modes_config: &HashMap<InputMode, String>) -> Result<ModeRenderer, Vec<Component>> {
-        let mut modes = HashMap::new();
+        let mut parsed_modes = HashMap::new();
         let mut mode_len = 0;
 
         // Parse Modes.
         for (k, v) in modes_config {
             let mode_components = Parser::new(&v, "[").expect_parse("Error parsing mode: ");
-
-            modes.insert(*k, mode_components);
+            parsed_modes.insert(*k, mode_components);
 
             // Catching errors in modes config and calculating component len.
-            if let Some(components) = modes.get(&k) {
+            if let Some(components) = parsed_modes.get(&k) {
                 for c in components {
                     match c {
                         Component::ParseError {
@@ -49,7 +48,7 @@ impl ModeRenderer {
         }
 
         Ok(ModeRenderer {
-            modes,
+            parsed_modes,
             mode_len,
             ..Default::default()
         })
@@ -74,7 +73,7 @@ impl ModeRenderer {
     pub fn render(&self) -> String {
         let mut res = String::new();
 
-        for c in &self.modes[&self.mode] {
+        for c in &self.parsed_modes[&self.mode] {
             match c {
                 Component::Text(t) => res.push_str(&self.fit_mode_len(t)),
                 Component::Style(s) => res.push_str(&self.style_renderer.render(s)),
