@@ -1,8 +1,50 @@
-use crate::composer::Component;
-use crate::style::{Color, Style};
 use core::iter::Enumerate;
 use core::str::Chars;
 use std::iter::Peekable;
+
+#[derive(Debug)]
+pub enum Component {
+    Text(String),
+    Style(Style),
+    Spacer,
+    Session,
+    Mode,
+    Tab,
+    Index,
+    Name,
+    LayoutHighlight {
+        layout: String,
+        hl_begin: usize,
+        hl_end: usize,
+    },
+}
+
+#[derive(Debug)]
+pub enum Style {
+    Bg(Color),
+    Fg(Color),
+    Bold,
+    Default,
+}
+
+#[derive(Debug)]
+pub enum Color {
+    Black,
+    Red,
+    Green,
+    Yellow,
+    Blue,
+    Magenta,
+    Cyan,
+    White,
+    Orange,
+    Gray,
+    Purple,
+    Gold,
+    Silver,
+    Pink,
+    Brown,
+}
 
 #[derive(Debug)]
 pub struct ParseError {
@@ -20,10 +62,6 @@ impl ParseError {
             hl_begin,
             hl_end,
         }
-    }
-
-    pub fn add_context(&mut self, context: &str) {
-        self.context.insert_str(0, context);
     }
 }
 
@@ -144,6 +182,7 @@ impl<'a> Parser<'a> {
             Some((_, 'T')) if self.allowed_specials.contains('T') => Ok(vec![Component::Tab]),
             Some((_, 'I')) if self.allowed_specials.contains('I') => Ok(vec![Component::Index]),
             Some((_, 'N')) if self.allowed_specials.contains('N') => Ok(vec![Component::Name]),
+            Some((_, '_')) if self.allowed_specials.contains('_') => Ok(vec![Component::Spacer]),
             Some((_, '[')) if self.allowed_specials.contains('[') => Ok(self.parse_styles()?),
             Some((hl_begin, _)) => Err(ParseError::new(
                 "Unexpected token: ",

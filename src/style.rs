@@ -27,6 +27,41 @@ pub enum Color {
     Brown,
 }
 
+fn get_color(palette: &Palette, color: &Color) -> ansi_term::Color {
+    let p = match color {
+        Color::Black => palette.black,
+        Color::Red => palette.red,
+        Color::Green => palette.green,
+        Color::Yellow => palette.yellow,
+        Color::Blue => palette.blue,
+        Color::Magenta => palette.magenta,
+        Color::Cyan => palette.cyan,
+        Color::White => palette.white,
+        Color::Orange => palette.orange,
+        Color::Gray => palette.gray,
+        Color::Purple => palette.purple,
+        Color::Gold => palette.gold,
+        Color::Silver => palette.silver,
+        Color::Pink => palette.pink,
+        Color::Brown => palette.brown,
+    };
+
+    match p {
+        PaletteColor::Rgb((r, g, b)) => ansi_term::Color::RGB(r, g, b),
+        PaletteColor::EightBit(color) => ansi_term::Color::Fixed(color),
+    }
+}
+
+pub fn render(palette: &Palette, style: &Style) -> String {
+    let s = ansi_term::Style::new();
+    match style {
+        Style::Fg(c) => s.fg(get_color(palette, c)).prefix().to_string(),
+        Style::Bg(c) => s.on(get_color(palette, c)).prefix().to_string(),
+        Style::Bold => s.bold().prefix().to_string(),
+        Style::Default => s.on(ansi_term::Color::Fixed(0)).suffix().to_string(),
+    }
+}
+
 #[derive(Default)]
 pub struct StyleRenderer {
     palette: Palette,

@@ -4,6 +4,7 @@ use crate::mode::ModeRenderer;
 use crate::style::{Style, StyleRenderer};
 use crate::tab::TabRenderer;
 use crate::parser::ParseError;
+use crate::State;
 use zellij_tile::prelude::*;
 
 #[derive(Debug)]
@@ -113,7 +114,7 @@ impl Composer {
         self.tab_renderer.update_tabs(tabs)
     }
 
-    pub fn compose(&self, cols: usize) -> String {
+    pub fn compose(&self, state: &mut State, cols: usize) -> String {
         let mut res = String::new();
 
         for c in self.components.iter() {

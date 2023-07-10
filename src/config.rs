@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::tab::TabState;
+use crate::TabState;
 use zellij_tile::prelude::*;
 
 pub struct Config {
@@ -11,7 +11,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Config {
         Config {
-            layout: "#[fg:green,bold] Zellij #[default](#S)#[default] #M | #T".to_string(),
+            layout: "#[fg:green,bold] Zellij #[default](#S)#[default] #M | #T #[bg:green] #_ text #_ last test in the line".to_string(),
             mode: HashMap::from([
                 (InputMode::Normal, "#[fg:green]NORMAL".to_string()),
                 (InputMode::Locked, "#[fg:red]LOCKED".to_string()),
