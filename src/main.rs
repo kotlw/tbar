@@ -1,3 +1,4 @@
+use std::cmp;
 use std::collections::HashMap;
 
 use zellij_tile::prelude::*;
@@ -186,9 +187,37 @@ impl State {
         layout: String,
         hl_begin: usize,
         hl_end: usize,
-    ) -> String {
+    ) -> (String, usize) {
+        // Func constants
+        let (bg_color, _) = self.render_style(&parser::Style::Bg(parser::Color::Red));
+        let (hl_color, _) = self.render_style(&parser::Style::Bg(parser::Color::Yellow));
+        let styles_len = bg_color.chars().count() + hl_color.chars().count();
+        let layout_wrap_len = 6;
+        let layout_len = layout.chars().count();
+        let hl_len = hl_end.saturating_sub(hl_begin);
 
-        "".to_string()
+        // Calculate layout window beginning and end
+        let offset = cols_left.saturating_sub(hl_len + layout_wrap_len) / 2;
+        let layout_begin = hl_begin.saturating_sub(offset);
+        let layout_end = cmp::min(layout_len, hl_end + offset);
+
+        // Setup layout wrapping strings
+        let wrap_left = if layout_begin > 0 { "..." } else { "^" };
+        let wrap_right = if layout_end < layout_len { "..." } else { "$" };
+
+        // Squeeze highlighted text if needed.
+        let squeeze_size = (hl_len + layout_wrap_len).saturating_sub(cols_left);
+        let hl_end_squeezed = cmp::max(hl_begin, hl_end.saturating_sub(squeeze_size));
+        if hl_end_squeezed <= hl_begin {
+            return ("......".chars().take(cols_left).collect(), cols_left);
+        };
+
+        let layout_before_hl = &layout[layout_begin..hl_begin];
+        let layout_hl = &layout[hl_begin..hl_end_squeezed];
+        let layout_after_hl = &layout[hl_end..layout_end];
+        let res = format!("{wrap_left}{layout_before_hl}{hl_color}{layout_hl}{bg_color}{layout_after_hl}{wrap_right}");
+
+        (res.to_string(), res.chars().count() - styles_len)
     }
 
     fn render_component(&self, component: &Component, cols_left: usize) -> (String, usize) {
@@ -196,6 +225,11 @@ impl State {
             Component::Text(t) => self.render_text(t, cols_left),
             Component::Style(s) => self.render_style(s),
             Component::Session => self.render_session(cols_left),
+            Component::LayoutHighlight {
+                layout,
+                hl_begin,
+                hl_end,
+            } => self.render_layout_highlight(cols_left, layout.to_string(), *hl_begin, *hl_end),
             _ => ("{unparsed}".to_string(), 10),
         }
     }
