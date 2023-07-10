@@ -3,6 +3,7 @@ use crate::error::ErrorRenderer;
 use crate::mode::ModeRenderer;
 use crate::style::{Style, StyleRenderer};
 use crate::tab::TabRenderer;
+use crate::parser::ParseError;
 use zellij_tile::prelude::*;
 
 #[derive(Debug)]
@@ -15,12 +16,23 @@ pub enum Component {
     Index,
     Name,
     ParseError {
-        hint: String,
+        context: String,
         layout: String,
         hl_begin: usize,
         hl_end: usize,
     },
 }
+
+impl From<ParseError> for Component {
+    fn from(value: ParseError) -> Self {
+        Component::ParseError {
+            context: value.context,
+            layout: value.layout,
+            hl_begin: value.hl_begin,
+            hl_end: value.hl_end
+        }
+    }
+} 
 
 #[derive(Default)]
 pub struct Composer {
@@ -37,22 +49,22 @@ impl Composer {
     pub fn new(config: &Config, components: Vec<Component>) -> Composer {
         let mut components = components;
         let mut mode_renderer = ModeRenderer::default();
-        let mut tab_renderer = TabRenderer::default();
+        // let mut tab_renderer = TabRenderer::default();
 
         match ModeRenderer::new(&config.mode) {
             Ok(m) => mode_renderer = m,
-            Err(c) => components = c,
+            Err(c) => components = vec![Component::from(c)],
         }
-
-        match TabRenderer::new(&config.tab) {
-            Ok(t) => tab_renderer = t,
-            Err(c) => components = c,
-        }
+        //
+        // match TabRenderer::new(&config.tab) {
+        //     Ok(t) => tab_renderer = t,
+        //     Err(c) => components = c,
+        // }
 
         Composer {
             components,
             mode_renderer,
-            tab_renderer,
+            // tab_renderer,
             ..Default::default()
         }
     }
@@ -65,13 +77,13 @@ impl Composer {
             Component::Mode => self.mode_renderer.render(),
             Component::Tab => self.tab_renderer.render(),
             Component::ParseError {
-                hint,
+                context,
                 layout,
                 hl_begin,
                 hl_end,
             } => self
                 .error_renderer
-                .render(cols, hint, layout, *hl_begin, *hl_end),
+                .render(cols, context, layout, *hl_begin, *hl_end),
             _ => "".to_string(),
         }
     }

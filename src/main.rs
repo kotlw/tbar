@@ -8,7 +8,7 @@ mod tab;
 
 use zellij_tile::prelude::*;
 
-use crate::composer::Composer;
+use crate::composer::{Component, Composer};
 use crate::config::Config;
 use crate::parser::Parser;
 
@@ -23,7 +23,12 @@ impl ZellijPlugin for State {
     fn load(&mut self) {
         // it will be possible to parse zellij config in the future
         let cfg = Config::default();
-        let components = Parser::new(&cfg.layout, "[SMT").expect_parse("Error parsing layout: ");
+        let components = Parser::new(&cfg.layout, "[SMT")
+            .parse()
+            .unwrap_or_else(|mut e| {
+                e.add_context("Error parsing layout: ");
+                vec![Component::from(e)]
+            });
         self.composer = Composer::new(&cfg, components);
         set_selectable(false);
         subscribe(&[EventType::ModeUpdate, EventType::TabUpdate]);

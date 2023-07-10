@@ -1,5 +1,5 @@
 use crate::composer::Component;
-use crate::parser::Parser;
+use crate::parser::{Parser, ParseError};
 use crate::style::StyleRenderer;
 use std::collections::HashMap;
 use zellij_tile::prelude::*;
@@ -23,34 +23,12 @@ pub struct TabRenderer {
 }
 
 impl TabRenderer {
-    pub fn new(tabs_config: &HashMap<TabState, String>) -> Result<TabRenderer, Vec<Component>> {
+    pub fn new(tabs_config: &HashMap<TabState, String>) -> Result<TabRenderer, ParseError> {
         let mut parsed_tab = HashMap::new();
-
         for (k, v) in tabs_config {
-            let tab_components = Parser::new(&v, "[IN").expect_parse("Error parsing tab layout: ");
+            // let tab_components = Parser::new(&v, "[IN").expect_parse("Error parsing tab layout: ");
+            let tab_components = Parser::new(&v, "[IN").parse()?;
             parsed_tab.insert(*k, tab_components);
-
-            // Catching errors in modes config and calculating component len.
-            if let Some(components) = parsed_tab.get(&k) {
-                for c in components {
-                    match c {
-                        Component::ParseError {
-                            hint,
-                            layout,
-                            hl_begin,
-                            hl_end,
-                        } => {
-                            return Err(vec![Component::ParseError {
-                                hint: hint.to_string(),
-                                layout: layout.to_string(),
-                                hl_begin: *hl_begin,
-                                hl_end: *hl_end,
-                            }]);
-                        }
-                        _ => (),
-                    }
-                }
-            }
         }
 
         Ok(TabRenderer {

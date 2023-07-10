@@ -1,5 +1,5 @@
 use crate::composer::Component;
-use crate::parser::Parser;
+use crate::parser::{ParseError, Parser};
 use crate::style::{Style, StyleRenderer};
 use std::collections::HashMap;
 use zellij_tile::prelude::*;
@@ -14,37 +14,18 @@ pub struct ModeRenderer {
 }
 
 impl ModeRenderer {
-    pub fn new(modes_config: &HashMap<InputMode, String>) -> Result<ModeRenderer, Vec<Component>> {
+    pub fn new(modes_config: &HashMap<InputMode, String>) -> Result<ModeRenderer, ParseError> {
         let mut parsed_modes = HashMap::new();
         let mut mode_len = 0;
 
-        // Parse Modes.
         for (k, v) in modes_config {
-            let mode_components = Parser::new(&v, "[").expect_parse("Error parsing mode: ");
-            parsed_modes.insert(*k, mode_components);
-
-            // Catching errors in modes config and calculating component len.
-            if let Some(components) = parsed_modes.get(&k) {
-                for c in components {
-                    match c {
-                        Component::ParseError {
-                            hint,
-                            layout,
-                            hl_begin,
-                            hl_end,
-                        } => {
-                            return Err(vec![Component::ParseError {
-                                hint: hint.to_string(),
-                                layout: layout.to_string(),
-                                hl_begin: *hl_begin,
-                                hl_end: *hl_end,
-                            }]);
-                        }
-                        Component::Text(t) => mode_len = std::cmp::max(mode_len, t.chars().count()),
-                        _ => (),
-                    }
-                }
-            }
+            let components = Parser::new(&v, "[").parse()?;
+            let actual_len = components.iter().map(|c| match c {
+                Component::Text(t) => t.chars().count(),
+                _ => 0,
+            }).sum();
+            parsed_modes.insert(*k, components);
+            mode_len = std::cmp::max(mode_len, actual_len)
         }
 
         Ok(ModeRenderer {
