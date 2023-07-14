@@ -5,9 +5,8 @@ use zellij_tile::prelude::*;
 
 mod config;
 mod parser;
-
 use crate::config::Config;
-use crate::parser::{Component, Parser};
+use crate::parser::{Component, ParseError, Parser};
 
 #[derive(Default)]
 struct State {
@@ -23,9 +22,17 @@ register_plugin!(State);
 
 impl ZellijPlugin for State {
     fn load(&mut self) {
-        // it will be possible to parse zellij config in the future
         let cfg = Config::default();
-        self.components = self.prepare_components(&cfg.layout);
+
+        self.components = Parser::new(&cfg.layout, "_[SMT")
+            .parse()
+            .unwrap_or_else(|e| self.prepare_error_components("Error parsing layout: ", e));
+
+        match self.prepare_modes(&cfg.mode) {
+            Ok(m) => self.modes = m,
+            Err(e) => self.components = self.prepare_error_components("Error parsing mode: ", e),
+        }
+
         // self.composer = Composer::new(&cfg, components);
         set_selectable(false);
         subscribe(&[EventType::ModeUpdate, EventType::TabUpdate]);
@@ -77,6 +84,10 @@ impl ZellijPlugin for State {
             res.push(rendered);
         }
 
+        if spacer_pos.len() == 0 {
+            spacer_pos.push(res.len());
+            res.push("".to_string());
+        }
         let spacer_len = (cols_left + spacer_pos.len() - 1) / spacer_pos.len();
 
         for i in spacer_pos {
@@ -102,22 +113,19 @@ pub enum TabState {
 }
 
 impl State {
-    fn prepare_components(&self, layout: &str) -> Vec<Component> {
-        let mut res = Parser::new(layout, "_[SMT")
-            .parse()
-            .unwrap_or_else(|e| self.prepare_error_components("Error parsing layout: ", e));
-
-        if !res.iter().any(|c| matches!(c, Component::Spacer)) {
-            res.push(parser::Component::Spacer);
+    fn prepare_modes(
+        &self,
+        modes_config: &HashMap<InputMode, String>,
+    ) -> Result<HashMap<InputMode, Vec<Component>>, ParseError> {
+        let mut res = HashMap::new();
+        for (k, v) in modes_config {
+            let components = Parser::new(&v, "[").parse()?;
+            res.insert(*k, components);
         }
-        res
+        Ok(res)
     }
 
-    fn prepare_error_components(
-        &self,
-        aditional_context: &str,
-        e: parser::ParseError,
-    ) -> Vec<Component> {
+    fn prepare_error_components(&self, aditional_context: &str, e: ParseError) -> Vec<Component> {
         vec![
             Component::Style(parser::Style::Bg(parser::Color::Red)),
             Component::Style(parser::Style::Fg(parser::Color::Black)),
@@ -220,17 +228,38 @@ impl State {
         (res.to_string(), res.chars().count() - styles_len)
     }
 
+    fn render_mode(&self, cols_left: usize) -> (String, usize) {
+        let mut res = String::new();
+        let mut len = 0;
+
+        for c in &self.modes[&self.mode_info.mode] {
+            let (rendered, curr_len) = self.render_component(c, cols_left);
+            res.push_str(&rendered);
+            len += curr_len;
+        }
+
+        let (default_style, _) = &self.render_style(&parser::Style::Default);
+        res.push_str(default_style);
+
+        if cols_left < len {
+            ("".to_string(), 0)
+        } else {
+            (res, len)
+        }
+    }
+
     fn render_component(&self, component: &Component, cols_left: usize) -> (String, usize) {
         match component {
             Component::Text(t) => self.render_text(t, cols_left),
             Component::Style(s) => self.render_style(s),
             Component::Session => self.render_session(cols_left),
+            Component::Mode => self.render_mode(cols_left),
             Component::LayoutHighlight {
                 layout,
                 hl_begin,
                 hl_end,
             } => self.render_layout_highlight(cols_left, layout.to_string(), *hl_begin, *hl_end),
-            _ => ("{unparsed}".to_string(), 10),
+            _ => self.render_text("{unparsed}", cols_left),
         }
     }
 }

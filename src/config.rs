@@ -11,7 +11,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Config {
         Config {
-            layout: "#[fg:green,bolde] Zellij #[default](#S)#[default] #M | #T #[bg:grween] #_".to_string(),
+            layout: "#[fg:green,bold] Zellij #[default,bg:white,fg:black] #S #[bg:black,fg:white]#[default] #M | #T #[bg:green] #_".to_string(),
             mode: HashMap::from([
                 (InputMode::Normal, "#[fg:green]NORMAL".to_string()),
                 (InputMode::Locked, "#[fg:red]LOCKED".to_string()),
