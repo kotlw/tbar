@@ -2,7 +2,7 @@
 name = "foobar"
 version = "0.1.0"
 authors = ["Vladyslav Kotliar <kotliarvladyslav@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 colored = "2"
@@ -11,5 +11,5 @@ unicode-width = "0.1.8"
 color-print = "0.3.4"
 handlebars = "4.3.7"
 serde_json = "1.0.97"
-zellij-tile = "*"
-zellij-tile-utils = "*"
+zellij-tile = "0.37.0"
+zellij-tile-utils = "0.37.0"

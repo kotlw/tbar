@@ -6,7 +6,7 @@ use zellij_tile::prelude::*;
 mod config;
 mod parser;
 use crate::config::Config;
-use crate::parser::{Component, ParseError, Parser};
+use crate::parser::{Color, Component, ParseError, Parser, Style};
 
 #[derive(Default)]
 struct State {
@@ -127,8 +127,8 @@ impl State {
 
     fn prepare_error_components(&self, aditional_context: &str, e: ParseError) -> Vec<Component> {
         vec![
-            Component::Style(parser::Style::Bg(parser::Color::Red)),
-            Component::Style(parser::Style::Fg(parser::Color::Black)),
+            Component::Style(Style::Bg(Color::Red)),
+            Component::Style(Style::Fg(Color::Black)),
             Component::Text(aditional_context.to_string()),
             Component::Text(e.context),
             Component::LayoutHighlight {
@@ -139,24 +139,24 @@ impl State {
         ]
     }
 
-    fn get_ansi_color(&self, color: &parser::Color) -> ansi_term::Color {
+    fn get_ansi_color(&self, color: &Color) -> ansi_term::Color {
         let palette = self.mode_info.style.colors;
         let p = match color {
-            parser::Color::Black => palette.black,
-            parser::Color::Red => palette.red,
-            parser::Color::Green => palette.green,
-            parser::Color::Yellow => palette.yellow,
-            parser::Color::Blue => palette.blue,
-            parser::Color::Magenta => palette.magenta,
-            parser::Color::Cyan => palette.cyan,
-            parser::Color::White => palette.white,
-            parser::Color::Orange => palette.orange,
-            parser::Color::Gray => palette.gray,
-            parser::Color::Purple => palette.purple,
-            parser::Color::Gold => palette.gold,
-            parser::Color::Silver => palette.silver,
-            parser::Color::Pink => palette.pink,
-            parser::Color::Brown => palette.brown,
+            Color::Black => palette.black,
+            Color::Red => palette.red,
+            Color::Green => palette.green,
+            Color::Yellow => palette.yellow,
+            Color::Blue => palette.blue,
+            Color::Magenta => palette.magenta,
+            Color::Cyan => palette.cyan,
+            Color::White => palette.white,
+            Color::Orange => palette.orange,
+            Color::Gray => palette.gray,
+            Color::Purple => palette.purple,
+            Color::Gold => palette.gold,
+            Color::Silver => palette.silver,
+            Color::Pink => palette.pink,
+            Color::Brown => palette.brown,
         };
 
         match p {
@@ -165,13 +165,13 @@ impl State {
         }
     }
 
-    fn render_style(&self, style: &parser::Style) -> (String, usize) {
+    fn render_style(&self, style: &Style) -> (String, usize) {
         let s = ansi_term::Style::new();
         let res = match style {
-            parser::Style::Fg(c) => s.fg(self.get_ansi_color(c)).prefix().to_string(),
-            parser::Style::Bg(c) => s.on(self.get_ansi_color(c)).prefix().to_string(),
-            parser::Style::Bold => s.bold().prefix().to_string(),
-            parser::Style::Default => s.on(ansi_term::Color::Fixed(0)).suffix().to_string(),
+            Style::Fg(c) => s.fg(self.get_ansi_color(c)).prefix().to_string(),
+            Style::Bg(c) => s.on(self.get_ansi_color(c)).prefix().to_string(),
+            Style::Bold => s.bold().prefix().to_string(),
+            Style::Default => s.on(ansi_term::Color::Fixed(0)).suffix().to_string(),
         };
         (res, 0)
     }
@@ -197,8 +197,8 @@ impl State {
         hl_end: usize,
     ) -> (String, usize) {
         // Func constants
-        let (bg_color, _) = self.render_style(&parser::Style::Bg(parser::Color::Red));
-        let (hl_color, _) = self.render_style(&parser::Style::Bg(parser::Color::Yellow));
+        let (bg_color, _) = self.render_style(&Style::Bg(Color::Red));
+        let (hl_color, _) = self.render_style(&Style::Bg(Color::Yellow));
         let styles_len = bg_color.chars().count() + hl_color.chars().count();
         let layout_wrap_len = 6;
         let layout_len = layout.chars().count();
@@ -238,7 +238,7 @@ impl State {
             len += curr_len;
         }
 
-        let (default_style, _) = &self.render_style(&parser::Style::Default);
+        let (default_style, _) = &self.render_style(&Style::Default);
         res.push_str(default_style);
 
         if cols_left < len {
