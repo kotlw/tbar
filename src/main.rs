@@ -24,9 +24,18 @@ impl ZellijPlugin for State {
     fn load(&mut self) {
         let cfg = Config::default();
 
-        self.components = Parser::new(&cfg.layout, "_[SMT")
-            .parse()
-            .unwrap_or_else(|e| self.prepare_error_components("Error parsing layout: ", e));
+        self.components = Parser::new(
+            &cfg.layout,
+            vec![
+                Component::Spacer,
+                Component::Style(Style::Default),
+                Component::Session,
+                Component::Mode,
+                Component::Tab,
+            ],
+        )
+        .parse()
+        .unwrap_or_else(|e| self.prepare_error_components("Error parsing layout: ", e));
 
         match self.prepare_modes(&cfg.mode) {
             Ok(m) => self.modes = m,
@@ -119,7 +128,7 @@ impl State {
     ) -> Result<HashMap<InputMode, Vec<Component>>, ParseError> {
         let mut res = HashMap::new();
         for (k, v) in modes_config {
-            let components = Parser::new(&v, "[").parse()?;
+            let components = Parser::new(&v, vec![Component::Style(Style::Default)]).parse()?;
             res.insert(*k, components);
         }
         Ok(res)

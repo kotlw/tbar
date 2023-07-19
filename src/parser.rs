@@ -2,7 +2,7 @@ use core::iter::Enumerate;
 use core::str::Chars;
 use std::iter::Peekable;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Component {
     Text(String),
     Style(Style),
@@ -19,7 +19,7 @@ pub enum Component {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Style {
     Bg(Color),
     Fg(Color),
@@ -27,7 +27,7 @@ pub enum Style {
     Default,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Color {
     Black,
     Red,
@@ -65,57 +65,15 @@ impl ParseError {
     }
 }
 
-/// Parse color.
-fn parse_color(token: &str) -> Result<Style, &str> {
-    let v: Vec<&str> = token.split(':').collect();
-
-    let color = match v.get(1) {
-        Some(&"black") => Color::Black,
-        Some(&"red") => Color::Red,
-        Some(&"green") => Color::Green,
-        Some(&"yellow") => Color::Yellow,
-        Some(&"blue") => Color::Blue,
-        Some(&"magenta") => Color::Magenta,
-        Some(&"cyan") => Color::Cyan,
-        Some(&"white") => Color::White,
-        Some(&"orange") => Color::Orange,
-        Some(&"gray") => Color::Gray,
-        Some(&"purple") => Color::Purple,
-        Some(&"gold") => Color::Gold,
-        Some(&"silver") => Color::Silver,
-        Some(&"pink") => Color::Pink,
-        Some(&"brown") => Color::Brown,
-        _ => {
-            return Err("Unknown color: ");
-        }
-    };
-
-    match v.get(0) {
-        Some(&"fg") => Ok(Style::Fg(color)),
-        Some(&"bg") => Ok(Style::Bg(color)),
-        _ => Err("Unknown color: "),
-    }
-}
-
-/// Parse style inside #[].
-fn parse_style(token: &str) -> Result<Style, &str> {
-    match token {
-        "default" => Ok(Style::Default),
-        "bold" => Ok(Style::Bold),
-        _ if token.contains(':') => Ok(parse_color(token)?),
-        _ => Err("Unknown style: "),
-    }
-}
-
 pub struct Parser<'a> {
     layout: &'a str,
     len: usize,
     iter: Peekable<Enumerate<Chars<'a>>>,
-    allowed_specials: &'a str,
+    allowed_specials: Vec<Component>,
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(layout: &'a str, allowed_specials: &'a str) -> Parser<'a> {
+    pub fn new(layout: &'a str, allowed_specials: Vec<Component>) -> Parser<'a> {
         let iter = layout.chars().enumerate().peekable();
         let len = layout.chars().count();
         Parser {
@@ -126,6 +84,48 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse color.
+    fn parse_color(token: &str) -> Result<Style, &str> {
+        let v: Vec<&str> = token.split(':').collect();
+
+        let color = match v.get(1) {
+            Some(&"black") => Color::Black,
+            Some(&"red") => Color::Red,
+            Some(&"green") => Color::Green,
+            Some(&"yellow") => Color::Yellow,
+            Some(&"blue") => Color::Blue,
+            Some(&"magenta") => Color::Magenta,
+            Some(&"cyan") => Color::Cyan,
+            Some(&"white") => Color::White,
+            Some(&"orange") => Color::Orange,
+            Some(&"gray") => Color::Gray,
+            Some(&"purple") => Color::Purple,
+            Some(&"gold") => Color::Gold,
+            Some(&"silver") => Color::Silver,
+            Some(&"pink") => Color::Pink,
+            Some(&"brown") => Color::Brown,
+            _ => {
+                return Err("Unknown color: ");
+            }
+        };
+
+        match v.get(0) {
+            Some(&"fg") => Ok(Style::Fg(color)),
+            Some(&"bg") => Ok(Style::Bg(color)),
+            _ => Err("Unknown color: "),
+        }
+    }
+
+    /// Parse style inside #[].
+    fn parse_style(token: &str) -> Result<Style, &str> {
+        match token {
+            "default" => Ok(Style::Default),
+            "bold" => Ok(Style::Bold),
+            _ if token.contains(':') => Ok(Self::parse_color(token)?),
+            _ => Err("Unknown style: "),
+        }
+    }
+
     /// Parse style components.
     fn parse_styles(&mut self) -> Result<Vec<Component>, ParseError> {
         let mut res = Vec::new();
@@ -133,7 +133,7 @@ impl<'a> Parser<'a> {
 
         loop {
             let token = self.take_until_any(",]#");
-            let style = parse_style(&token);
+            let style = Self::parse_style(&token);
 
             if let Ok(s) = style {
                 res.push(Component::Style(s));
@@ -174,16 +174,22 @@ impl<'a> Parser<'a> {
 
     /// Parse non text components.
     fn parse_specials(&mut self) -> Result<Vec<Component>, ParseError> {
+        macro_rules! is_allowed {
+            ($($component:tt)+) => {
+                self.allowed_specials.iter().any(|x| matches!(x, $($component)+))
+            };
+        }
+
         self.iter.next(); // skip '#' symbol
 
         let res = match self.iter.peek() {
-            Some((_, 'S')) if self.allowed_specials.contains('S') => Ok(vec![Component::Session]),
-            Some((_, 'M')) if self.allowed_specials.contains('M') => Ok(vec![Component::Mode]),
-            Some((_, 'T')) if self.allowed_specials.contains('T') => Ok(vec![Component::Tab]),
-            Some((_, 'I')) if self.allowed_specials.contains('I') => Ok(vec![Component::Index]),
-            Some((_, 'N')) if self.allowed_specials.contains('N') => Ok(vec![Component::Name]),
-            Some((_, '_')) if self.allowed_specials.contains('_') => Ok(vec![Component::Spacer]),
-            Some((_, '[')) if self.allowed_specials.contains('[') => Ok(self.parse_styles()?),
+            Some((_, 'S')) if is_allowed!(Component::Session) => Ok(vec![Component::Session]),
+            Some((_, 'M')) if is_allowed!(Component::Mode) => Ok(vec![Component::Mode]),
+            Some((_, 'T')) if is_allowed!(Component::Tab) => Ok(vec![Component::Tab]),
+            Some((_, 'I')) if is_allowed!(Component::Index) => Ok(vec![Component::Index]),
+            Some((_, 'N')) if is_allowed!(Component::Name) => Ok(vec![Component::Name]),
+            Some((_, '_')) if is_allowed!(Component::Spacer) => Ok(vec![Component::Spacer]),
+            Some((_, '[')) if is_allowed!(Component::Style(..)) => Ok(self.parse_styles()?),
             Some((hl_begin, _)) => Err(ParseError::new(
                 "Unexpected token: ",
                 self.layout,
