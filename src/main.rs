@@ -10,8 +10,9 @@ use crate::parser::{Color, Component, ParseError, Parser, Style};
 
 #[derive(Default)]
 struct State {
-    components: Vec<Component>,
-    modes: HashMap<InputMode, Vec<Component>>,
+    layout_components: Vec<Component>,
+    modes_components: HashMap<InputMode, Vec<Component>>,
+    tabs_components: HashMap<TabLayout, Vec<Component>>,
 
     mode_info: ModeInfo,
     tabs: Vec<TabInfo>,
@@ -24,7 +25,7 @@ impl ZellijPlugin for State {
     fn load(&mut self) {
         let cfg = Config::default();
 
-        self.components = Parser::new(
+        self.layout_components = Parser::new(
             &cfg.layout,
             vec![
                 Component::Spacer,
@@ -37,9 +38,18 @@ impl ZellijPlugin for State {
         .parse()
         .unwrap_or_else(|e| self.prepare_error_components("Error parsing layout: ", e));
 
-        match self.prepare_modes(&cfg.mode) {
-            Ok(m) => self.modes = m,
-            Err(e) => self.components = self.prepare_error_components("Error parsing mode: ", e),
+        match self.parse_modes(&cfg.mode) {
+            Ok(c) => self.modes_components = c,
+            Err(e) => {
+                self.layout_components = self.prepare_error_components("Error parsing mode: ", e)
+            }
+        }
+
+        match self.parse_tabs(&cfg.tab) {
+            Ok(c) => self.tabs_components = c,
+            Err(e) => {
+                self.layout_components = self.prepare_error_components("Error parsing tab: ", e)
+            }
         }
 
         // self.composer = Composer::new(&cfg, components);
@@ -58,8 +68,7 @@ impl ZellijPlugin for State {
             }
             Event::TabUpdate(tabs) => {
                 if let Some(active_tab_index) = tabs.iter().position(|t| t.active) {
-                    // tabs are indexed starting from 1 so we need to add 1
-                    let active_tab_idx = active_tab_index + 1;
+                    let active_tab_idx = active_tab_index;
                     if self.active_tab_idx != active_tab_idx || self.tabs != tabs {
                         should_render = true;
                     }
@@ -82,7 +91,7 @@ impl ZellijPlugin for State {
         let mut spacer_pos = Vec::new();
         let mut cols_left = cols;
 
-        for (i, component) in self.components.iter().enumerate() {
+        for (i, component) in self.layout_components.iter().enumerate() {
             if let Component::Spacer = component {
                 res.push("".to_string());
                 spacer_pos.push(i);
@@ -114,21 +123,39 @@ impl ZellijPlugin for State {
 }
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone)]
-pub enum TabState {
+pub enum TabLayout {
     Inactive,
     Active,
     InactiveSync,
     ActiveSync,
+    LeftMoreTabs,
+    RightMoreTabs,
 }
 
 impl State {
-    fn prepare_modes(
+    fn parse_modes(
         &self,
         modes_config: &HashMap<InputMode, String>,
     ) -> Result<HashMap<InputMode, Vec<Component>>, ParseError> {
         let mut res = HashMap::new();
         for (k, v) in modes_config {
             let components = Parser::new(&v, vec![Component::Style(Style::Default)]).parse()?;
+            res.insert(*k, components);
+        }
+        Ok(res)
+    }
+
+    fn parse_tabs(
+        &self,
+        tabs_config: &HashMap<TabLayout, String>,
+    ) -> Result<HashMap<TabLayout, Vec<Component>>, ParseError> {
+        let mut res = HashMap::new();
+        for (k, v) in tabs_config {
+            let mut allowed_specials = vec![Component::Style(Style::Default), Component::Index];
+            if !matches!(k, TabLayout::LeftMoreTabs) && !matches!(k, TabLayout::RightMoreTabs) {
+                allowed_specials.push(Component::Name);
+            }
+            let components = Parser::new(&v, allowed_specials).parse()?;
             res.insert(*k, components);
         }
         Ok(res)
@@ -229,9 +256,14 @@ impl State {
             return ("......".chars().take(cols_left).collect(), cols_left);
         };
 
-        let layout_before_hl = &layout[layout_begin..hl_begin];
-        let layout_hl = &layout[hl_begin..hl_end_squeezed];
-        let layout_after_hl = &layout[hl_end..layout_end];
+        // handle string slice with unicode chars
+        let layout_unicode_slice = |start, end| {
+            let l = layout.chars().collect::<Vec<_>>();
+            l.get(start..end).unwrap().iter().collect::<String>()
+        };
+        let layout_before_hl = layout_unicode_slice(layout_begin, hl_begin);
+        let layout_hl = layout_unicode_slice(hl_begin, hl_end_squeezed);
+        let layout_after_hl = layout_unicode_slice(hl_end, layout_end);
         let res = format!("{wrap_left}{layout_before_hl}{hl_color}{layout_hl}{bg_color}{layout_after_hl}{wrap_right}");
 
         (res.to_string(), res.chars().count() - styles_len)
@@ -241,7 +273,7 @@ impl State {
         let mut res = String::new();
         let mut len = 0;
 
-        for c in &self.modes[&self.mode_info.mode] {
+        for c in &self.modes_components[&self.mode_info.mode] {
             let (rendered, curr_len) = self.render_component(c, cols_left);
             res.push_str(&rendered);
             len += curr_len;
@@ -256,6 +288,16 @@ impl State {
             (res, len)
         }
     }
+
+    // fn render_inactive_tab(&self, tab: TabInfo) -> (String, usize) {}
+
+    // fn render_tab(&self, cols_left: usize) -> (String, usize) {
+    //     let mut tabs = self.tabs.clone();
+    //     let mut tabs_after_active = tabs.split_off(self.active_tab_idx);
+    //     let mut tabs_before_active = tabs;
+    //
+    //     todo!()
+    // }
 
     fn render_component(&self, component: &Component, cols_left: usize) -> (String, usize) {
         match component {

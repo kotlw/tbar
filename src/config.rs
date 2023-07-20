@@ -1,17 +1,17 @@
 use std::collections::HashMap;
-use crate::TabState;
+use crate::TabLayout;
 use zellij_tile::prelude::*;
 
 pub struct Config {
     pub layout: String,
     pub mode: HashMap<InputMode, String>,
-    pub tab: HashMap<TabState, String>,
+    pub tab: HashMap<TabLayout, String>,
 }
 
 impl Default for Config {
     fn default() -> Config {
         Config {
-            layout: "#[fg:green,bold] Zellij #[default,bg:white,fg:black] #S #[bg:black,fg:white]#[default] #M | #T #[bg:green] #_".to_string(),
+            layout: "#[fg:green,bold] Zellij #[default,bg:white,fg:black] #S #[bg:black,fg:white]#[default] #M | #T #[bg:green] #_ #T".to_string(),
             mode: HashMap::from([
                 (InputMode::Normal, "#[fg:green]NORMAL".to_string()),
                 (InputMode::Locked, "#[fg:red]LOCKED".to_string()),
@@ -29,10 +29,12 @@ impl Default for Config {
                 (InputMode::Tmux, "#[fg:orange]TMUX".to_string()),
             ]),
             tab: HashMap::from([
-                (TabState::Inactive, "#[bg:white,fg:black] #I #N ".to_string()),
-                (TabState::Active, "#[bg:green,fg:black] #I #N ".to_string()),
-                (TabState::InactiveSync, "#[bg:white,fg:black] #I #N (Sync) ".to_string()),
-                (TabState::ActiveSync, "#[bg:green,fg:black] #I #N (Sync) ".to_string()),
+                (TabLayout::Inactive, "#[bg:white,fg:black] #I #N ".to_string()),
+                (TabLayout::Active, "#[bg:green,fg:black] #I #N ".to_string()),
+                (TabLayout::InactiveSync, "#[bg:white,fg:black] #I #N (Sync) ".to_string()),
+                (TabLayout::ActiveSync, "#[bg:green,fg:black] #I #N (Sync) ".to_string()),
+                (TabLayout::LeftMoreTabs, "#[bg:orange,fg:black] ← +#I ".to_string()),
+                (TabLayout::RightMoreTabs, "#[bg:orange,fg:black] +#I → ".to_string()),
             ]),
         }
     }
