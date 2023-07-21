@@ -25,34 +25,25 @@ impl ZellijPlugin for State {
     fn load(&mut self) {
         let cfg = Config::default();
 
-        self.layout_components = Parser::new(
-            &cfg.layout,
-            vec![
-                Component::Spacer,
-                Component::Style(Style::Default),
-                Component::Session,
-                Component::Mode,
-                Component::Tab,
-            ],
-        )
-        .parse()
-        .unwrap_or_else(|e| self.prepare_error_components("Error parsing layout: ", e));
+        self.layout_components = match Self::parse_layout(&cfg.layout) {
+            Ok(c) => c,
+            Err(e) => Self::prepare_error_components("Error parsing mode: ", e),
+        };
 
-        match self.parse_modes(&cfg.mode) {
+        match Self::parse_modes(&cfg.mode) {
             Ok(c) => self.modes_components = c,
             Err(e) => {
-                self.layout_components = self.prepare_error_components("Error parsing mode: ", e)
+                self.layout_components = Self::prepare_error_components("Error parsing mode: ", e)
             }
         }
 
-        match self.parse_tabs(&cfg.tab) {
+        match Self::parse_tabs(&cfg.tab) {
             Ok(c) => self.tabs_components = c,
             Err(e) => {
-                self.layout_components = self.prepare_error_components("Error parsing tab: ", e)
+                self.layout_components = Self::prepare_error_components("Error parsing tab: ", e)
             }
         }
 
-        // self.composer = Composer::new(&cfg, components);
         set_selectable(false);
         subscribe(&[EventType::ModeUpdate, EventType::TabUpdate]);
     }
@@ -97,7 +88,7 @@ impl ZellijPlugin for State {
                 spacer_pos.push(i);
                 continue;
             }
-            let (rendered, len) = self.render_component(component, cols_left);
+            let (rendered, len) = self.render_layout_component(component, cols_left);
             cols_left = cols_left.saturating_sub(len);
             res.push(rendered);
         }
@@ -132,9 +123,25 @@ pub enum TabLayout {
     RightMoreTabs,
 }
 
+#[derive(Default, Clone)]
+struct RenderedTabsPart {
+    value: String,
+    len: usize,
+}
+
 impl State {
+    fn parse_layout(layout: &str) -> Result<Vec<Component>, ParseError> {
+        let allowed_specials = vec![
+            Component::Spacer,
+            Component::Style(Style::Default),
+            Component::Session,
+            Component::Mode,
+            Component::Tab,
+        ];
+        Ok(Parser::new(layout, allowed_specials).parse()?)
+    }
+
     fn parse_modes(
-        &self,
         modes_config: &HashMap<InputMode, String>,
     ) -> Result<HashMap<InputMode, Vec<Component>>, ParseError> {
         let mut res = HashMap::new();
@@ -146,7 +153,6 @@ impl State {
     }
 
     fn parse_tabs(
-        &self,
         tabs_config: &HashMap<TabLayout, String>,
     ) -> Result<HashMap<TabLayout, Vec<Component>>, ParseError> {
         let mut res = HashMap::new();
@@ -161,7 +167,7 @@ impl State {
         Ok(res)
     }
 
-    fn prepare_error_components(&self, aditional_context: &str, e: ParseError) -> Vec<Component> {
+    fn prepare_error_components(aditional_context: &str, e: ParseError) -> Vec<Component> {
         vec![
             Component::Style(Style::Bg(Color::Red)),
             Component::Style(Style::Fg(Color::Black)),
@@ -274,7 +280,7 @@ impl State {
         let mut len = 0;
 
         for c in &self.modes_components[&self.mode_info.mode] {
-            let (rendered, curr_len) = self.render_component(c, cols_left);
+            let (rendered, curr_len) = self.render_layout_component(c, cols_left);
             res.push_str(&rendered);
             len += curr_len;
         }
@@ -289,22 +295,108 @@ impl State {
         }
     }
 
-    // fn render_inactive_tab(&self, tab: TabInfo) -> (String, usize) {}
+    fn render_tabs_part(&self, key: TabLayout, number: usize, name: &str) -> RenderedTabsPart {
+        let mut render_tab_name = name.clone();
+        let mut value = String::new();
+        let mut len = 0;
 
-    // fn render_tab(&self, cols_left: usize) -> (String, usize) {
-    //     let mut tabs = self.tabs.clone();
-    //     let mut tabs_after_active = tabs.split_off(self.active_tab_idx);
-    //     let mut tabs_before_active = tabs;
-    //
-    //     todo!()
-    // }
+        if self.tabs_components[&key]
+            .iter()
+            .any(|x| matches!(x, Component::Index))
+        {
+            render_tab_name = "Tab"
+        }
 
-    fn render_component(&self, component: &Component, cols_left: usize) -> (String, usize) {
+        for c in &self.tabs_components[&key] {
+            let (rendered, curr_len) = match c {
+                Component::Text(t) => self.render_text(t, usize::MAX),
+                Component::Style(s) => self.render_style(s),
+                Component::Index => self.render_text(&number.to_string(), usize::MAX),
+                Component::Name => self.render_text(render_tab_name, usize::MAX),
+                _ => self.render_text("{unparsed}", usize::MAX),
+            };
+            value.push_str(&rendered);
+            len += curr_len;
+        }
+
+        RenderedTabsPart { value, len }
+    }
+
+    fn make_tab_parts(&self) -> Vec<RenderedTabsPart> {
+        let mut res = Vec::new();
+        for (i, t) in self.tabs.iter().enumerate() {
+            let layout_key = match (t.active, t.is_sync_panes_active) {
+                (true, true) => TabLayout::ActiveSync,
+                (false, true) => TabLayout::InactiveSync,
+                (true, false) => TabLayout::Active,
+                (false, false) => TabLayout::Inactive,
+            };
+            res.push(self.render_tabs_part(layout_key, i + 1, &t.name));
+        }
+        res
+    }
+
+    fn render_tab(&self, cols_left: usize) -> (String, usize) {
+        let mut tab_parts = self.make_tab_parts();
+        let tab_parts_total_len = tab_parts.iter().map(|x| x.len).sum();
+        if tab_parts_total_len <= cols_left {
+            let res = tab_parts
+                .iter()
+                .map(|x| x.value.to_string())
+                .collect::<String>();
+            return (res, tab_parts_total_len);
+        }
+
+        let mut before_active_tab_count = self.active_tab_idx;
+        let mut after_active_tab_count = tab_parts.len().saturating_sub(self.active_tab_idx + 1);
+        let mut collapsed_left_count = 0;
+        let mut collapsed_right_count = 0;
+        let mut collapsed_left = RenderedTabsPart::default();
+        let mut collapsed_right = RenderedTabsPart::default();
+
+        loop {
+            let mut tab_parts_with_collapsed = tab_parts.clone();
+            tab_parts_with_collapsed.insert(0, collapsed_left.clone());
+            tab_parts_with_collapsed.push(collapsed_right.clone());
+            let tab_parts_total_len = tab_parts_with_collapsed.iter().map(|x| x.len).sum();
+            if tab_parts_total_len <= cols_left {
+                let res = tab_parts_with_collapsed
+                    .iter()
+                    .map(|x| x.value.to_string())
+                    .collect::<String>();
+                return (res, tab_parts_total_len);
+            }
+
+            if tab_parts.len() == 1 && tab_parts.first().unwrap().len > cols_left {
+                return ("".to_string(), 0) 
+            }
+
+            if before_active_tab_count >= after_active_tab_count && before_active_tab_count != 0 {
+                before_active_tab_count = before_active_tab_count.saturating_sub(1);
+                collapsed_left_count += 1;
+                tab_parts.remove(0);
+                collapsed_left =
+                    self.render_tabs_part(TabLayout::LeftMoreTabs, collapsed_left_count, "");
+            } else if after_active_tab_count != 0 {
+                after_active_tab_count = after_active_tab_count.saturating_sub(1);
+                collapsed_right_count += 1;
+                tab_parts.pop();
+                collapsed_right =
+                    self.render_tabs_part(TabLayout::RightMoreTabs, collapsed_right_count, "");
+            } else {
+                collapsed_left = RenderedTabsPart::default();
+                collapsed_right = RenderedTabsPart::default();
+            };
+        }
+    }
+
+    fn render_layout_component(&self, component: &Component, cols_left: usize) -> (String, usize) {
         match component {
             Component::Text(t) => self.render_text(t, cols_left),
             Component::Style(s) => self.render_style(s),
             Component::Session => self.render_session(cols_left),
             Component::Mode => self.render_mode(cols_left),
+            Component::Tab => self.render_tab(cols_left),
             Component::LayoutHighlight {
                 layout,
                 hl_begin,
