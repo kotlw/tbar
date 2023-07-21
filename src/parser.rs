@@ -9,7 +9,7 @@ pub enum Component {
     Spacer,
     Session,
     Mode,
-    Tab,
+    TabBar,
     Index,
     Name,
     LayoutHighlight {
@@ -185,7 +185,7 @@ impl<'a> Parser<'a> {
         let res = match self.iter.peek() {
             Some((_, 'S')) if is_allowed!(Component::Session) => Ok(vec![Component::Session]),
             Some((_, 'M')) if is_allowed!(Component::Mode) => Ok(vec![Component::Mode]),
-            Some((_, 'T')) if is_allowed!(Component::Tab) => Ok(vec![Component::Tab]),
+            Some((_, 'T')) if is_allowed!(Component::TabBar) => Ok(vec![Component::TabBar]),
             Some((_, 'I')) if is_allowed!(Component::Index) => Ok(vec![Component::Index]),
             Some((_, 'N')) if is_allowed!(Component::Name) => Ok(vec![Component::Name]),
             Some((_, '_')) if is_allowed!(Component::Spacer) => Ok(vec![Component::Spacer]),

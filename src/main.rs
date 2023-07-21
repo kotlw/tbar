@@ -8,11 +8,32 @@ mod parser;
 use crate::config::Config;
 use crate::parser::{Color, Component, ParseError, Parser, Style};
 
+type ModeComponents = HashMap<InputMode, Vec<Component>>;
+type TabComponents = HashMap<TabPartState, Vec<Component>>;
+type ModeLayouts<'a> = HashMap<InputMode, &'a str>;
+type TabLayouts<'a> = HashMap<TabPartState, &'a str>;
+
+#[derive(PartialEq, Eq, Hash, Copy, Clone)]
+pub enum TabPartState {
+    Inactive,
+    Active,
+    InactiveSync,
+    ActiveSync,
+    LeftMoreTabs,
+    RightMoreTabs,
+}
+
+#[derive(Default, Clone)]
+struct RenderedTabPart {
+    value: String,
+    len: usize,
+}
+
 #[derive(Default)]
 struct State {
     layout_components: Vec<Component>,
-    modes_components: HashMap<InputMode, Vec<Component>>,
-    tabs_components: HashMap<TabLayout, Vec<Component>>,
+    mode_components: ModeComponents,
+    tab_components: TabComponents,
 
     mode_info: ModeInfo,
     tabs: Vec<TabInfo>,
@@ -27,21 +48,17 @@ impl ZellijPlugin for State {
 
         self.layout_components = match Self::parse_layout(&cfg.layout) {
             Ok(c) => c,
-            Err(e) => Self::prepare_error_components("Error parsing mode: ", e),
+            Err(e) => Self::prepare_error("Error parsing mode: ", e),
         };
 
-        match Self::parse_modes(&cfg.mode) {
-            Ok(c) => self.modes_components = c,
-            Err(e) => {
-                self.layout_components = Self::prepare_error_components("Error parsing mode: ", e)
-            }
+        match Self::parse_mode_layouts(&cfg.mode_layouts) {
+            Ok(c) => self.mode_components = c,
+            Err(e) => self.layout_components = Self::prepare_error("Error parsing mode: ", e),
         }
 
-        match Self::parse_tabs(&cfg.tab) {
-            Ok(c) => self.tabs_components = c,
-            Err(e) => {
-                self.layout_components = Self::prepare_error_components("Error parsing tab: ", e)
-            }
+        match Self::parse_tab_layouts(&cfg.tab_layouts) {
+            Ok(c) => self.tab_components = c,
+            Err(e) => self.layout_components = Self::prepare_error("Error parsing tab: ", e),
         }
 
         set_selectable(false);
@@ -113,22 +130,6 @@ impl ZellijPlugin for State {
     }
 }
 
-#[derive(PartialEq, Eq, Hash, Copy, Clone)]
-pub enum TabLayout {
-    Inactive,
-    Active,
-    InactiveSync,
-    ActiveSync,
-    LeftMoreTabs,
-    RightMoreTabs,
-}
-
-#[derive(Default, Clone)]
-struct RenderedTabsPart {
-    value: String,
-    len: usize,
-}
-
 impl State {
     fn parse_layout(layout: &str) -> Result<Vec<Component>, ParseError> {
         let allowed_specials = vec![
@@ -136,38 +137,40 @@ impl State {
             Component::Style(Style::Default),
             Component::Session,
             Component::Mode,
-            Component::Tab,
+            Component::TabBar,
         ];
         Ok(Parser::new(layout, allowed_specials).parse()?)
     }
 
-    fn parse_modes(
-        modes_config: &HashMap<InputMode, String>,
-    ) -> Result<HashMap<InputMode, Vec<Component>>, ParseError> {
+    fn parse_mode_layouts(layouts: &ModeLayouts) -> Result<ModeComponents, ParseError> {
         let mut res = HashMap::new();
-        for (k, v) in modes_config {
+
+        for (k, v) in layouts {
             let components = Parser::new(&v, vec![Component::Style(Style::Default)]).parse()?;
             res.insert(*k, components);
         }
+
         Ok(res)
     }
 
-    fn parse_tabs(
-        tabs_config: &HashMap<TabLayout, String>,
-    ) -> Result<HashMap<TabLayout, Vec<Component>>, ParseError> {
+    fn parse_tab_layouts(layouts: &TabLayouts) -> Result<TabComponents, ParseError> {
         let mut res = HashMap::new();
-        for (k, v) in tabs_config {
+
+        for (k, v) in layouts {
             let mut allowed_specials = vec![Component::Style(Style::Default), Component::Index];
-            if !matches!(k, TabLayout::LeftMoreTabs) && !matches!(k, TabLayout::RightMoreTabs) {
+            if !matches!(k, TabPartState::LeftMoreTabs) && !matches!(k, TabPartState::RightMoreTabs)
+            {
                 allowed_specials.push(Component::Name);
             }
+
             let components = Parser::new(&v, allowed_specials).parse()?;
             res.insert(*k, components);
         }
+
         Ok(res)
     }
 
-    fn prepare_error_components(aditional_context: &str, e: ParseError) -> Vec<Component> {
+    fn prepare_error(aditional_context: &str, e: ParseError) -> Vec<Component> {
         vec![
             Component::Style(Style::Bg(Color::Red)),
             Component::Style(Style::Fg(Color::Black)),
@@ -279,14 +282,11 @@ impl State {
         let mut res = String::new();
         let mut len = 0;
 
-        for c in &self.modes_components[&self.mode_info.mode] {
+        for c in &self.mode_components[&self.mode_info.mode] {
             let (rendered, curr_len) = self.render_layout_component(c, cols_left);
             res.push_str(&rendered);
             len += curr_len;
         }
-
-        let (default_style, _) = &self.render_style(&Style::Default);
-        res.push_str(default_style);
 
         if cols_left < len {
             ("".to_string(), 0)
@@ -295,22 +295,27 @@ impl State {
         }
     }
 
-    fn render_tabs_part(&self, key: TabLayout, number: usize, name: &str) -> RenderedTabsPart {
+    fn render_tab_part(
+        &self,
+        tab_part_state: TabPartState,
+        number: usize,
+        name: &str,
+    ) -> RenderedTabPart {
         let mut render_tab_name = name.clone();
         let mut value = String::new();
         let mut len = 0;
 
-        if self.tabs_components[&key]
+        if self.tab_components[&tab_part_state]
             .iter()
             .any(|x| matches!(x, Component::Index))
         {
             render_tab_name = "Tab"
         }
 
-        for c in &self.tabs_components[&key] {
+        for c in &self.tab_components[&tab_part_state] {
             let (rendered, curr_len) = match c {
-                Component::Text(t) => self.render_text(t, usize::MAX),
-                Component::Style(s) => self.render_style(s),
+                Component::Text(t) => self.render_text(&t, usize::MAX),
+                Component::Style(s) => self.render_style(&s),
                 Component::Index => self.render_text(&number.to_string(), usize::MAX),
                 Component::Name => self.render_text(render_tab_name, usize::MAX),
                 _ => self.render_text("{unparsed}", usize::MAX),
@@ -319,73 +324,78 @@ impl State {
             len += curr_len;
         }
 
-        RenderedTabsPart { value, len }
+        RenderedTabPart { value, len }
     }
 
-    fn make_tab_parts(&self) -> Vec<RenderedTabsPart> {
+    fn get_tab_parts(&self) -> Vec<RenderedTabPart> {
         let mut res = Vec::new();
+
         for (i, t) in self.tabs.iter().enumerate() {
             let layout_key = match (t.active, t.is_sync_panes_active) {
-                (true, true) => TabLayout::ActiveSync,
-                (false, true) => TabLayout::InactiveSync,
-                (true, false) => TabLayout::Active,
-                (false, false) => TabLayout::Inactive,
+                (true, true) => TabPartState::ActiveSync,
+                (false, true) => TabPartState::InactiveSync,
+                (true, false) => TabPartState::Active,
+                (false, false) => TabPartState::Inactive,
             };
-            res.push(self.render_tabs_part(layout_key, i + 1, &t.name));
+            res.push(self.render_tab_part(layout_key, i + 1, &t.name));
         }
+
         res
     }
 
-    fn render_tab(&self, cols_left: usize) -> (String, usize) {
-        let mut tab_parts = self.make_tab_parts();
-        let tab_parts_total_len = tab_parts.iter().map(|x| x.len).sum();
+    // TODO: this is huge
+    fn render_tab_bar(&self, cols_left: usize) -> (String, usize) {
+        let parts_len = |parts: &Vec<RenderedTabPart>| parts.iter().map(|x| x.len).sum();
+        let glue_parts = |parts: &Vec<RenderedTabPart>| {
+            let iter = parts.iter();
+            iter.map(|x| x.value.to_string()).collect::<String>()
+        };
+
+        let mut tab_parts = self.get_tab_parts();
+        let tab_parts_total_len = parts_len(&tab_parts);
         if tab_parts_total_len <= cols_left {
-            let res = tab_parts
-                .iter()
-                .map(|x| x.value.to_string())
-                .collect::<String>();
-            return (res, tab_parts_total_len);
+            return (glue_parts(&tab_parts), tab_parts_total_len);
         }
 
         let mut before_active_tab_count = self.active_tab_idx;
         let mut after_active_tab_count = tab_parts.len().saturating_sub(self.active_tab_idx + 1);
         let mut collapsed_left_count = 0;
         let mut collapsed_right_count = 0;
-        let mut collapsed_left = RenderedTabsPart::default();
-        let mut collapsed_right = RenderedTabsPart::default();
+        let mut collapsed_left = RenderedTabPart::default();
+        let mut collapsed_right = RenderedTabPart::default();
 
         loop {
             let mut tab_parts_with_collapsed = tab_parts.clone();
             tab_parts_with_collapsed.insert(0, collapsed_left.clone());
             tab_parts_with_collapsed.push(collapsed_right.clone());
-            let tab_parts_total_len = tab_parts_with_collapsed.iter().map(|x| x.len).sum();
+            let tab_parts_total_len = parts_len(&tab_parts_with_collapsed);
+
+            // Break the loop when it fits cols_left
             if tab_parts_total_len <= cols_left {
-                let res = tab_parts_with_collapsed
-                    .iter()
-                    .map(|x| x.value.to_string())
-                    .collect::<String>();
-                return (res, tab_parts_total_len);
+                return (glue_parts(&tab_parts_with_collapsed), tab_parts_total_len);
             }
 
+            // return empty if cols_left is less than an active tab length
             if tab_parts.len() == 1 && tab_parts.first().unwrap().len > cols_left {
-                return ("".to_string(), 0) 
+                return ("".to_string(), 0);
             }
 
+            // remove from tab_parts and increment collapsed tabs count
             if before_active_tab_count >= after_active_tab_count && before_active_tab_count != 0 {
                 before_active_tab_count = before_active_tab_count.saturating_sub(1);
                 collapsed_left_count += 1;
                 tab_parts.remove(0);
                 collapsed_left =
-                    self.render_tabs_part(TabLayout::LeftMoreTabs, collapsed_left_count, "");
+                    self.render_tab_part(TabPartState::LeftMoreTabs, collapsed_left_count, "");
             } else if after_active_tab_count != 0 {
                 after_active_tab_count = after_active_tab_count.saturating_sub(1);
                 collapsed_right_count += 1;
                 tab_parts.pop();
                 collapsed_right =
-                    self.render_tabs_part(TabLayout::RightMoreTabs, collapsed_right_count, "");
+                    self.render_tab_part(TabPartState::RightMoreTabs, collapsed_right_count, "");
             } else {
-                collapsed_left = RenderedTabsPart::default();
-                collapsed_right = RenderedTabsPart::default();
+                collapsed_left = RenderedTabPart::default();
+                collapsed_right = RenderedTabPart::default();
             };
         }
     }
@@ -396,7 +406,7 @@ impl State {
             Component::Style(s) => self.render_style(s),
             Component::Session => self.render_session(cols_left),
             Component::Mode => self.render_mode(cols_left),
-            Component::Tab => self.render_tab(cols_left),
+            Component::TabBar => self.render_tab_bar(cols_left),
             Component::LayoutHighlight {
                 layout,
                 hl_begin,
