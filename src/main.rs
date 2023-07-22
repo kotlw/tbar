@@ -1,4 +1,4 @@
-use std::cmp;
+use std::cmp::{max, min};
 use std::collections::HashMap;
 
 use zellij_tile::prelude::*;
@@ -8,10 +8,13 @@ mod parser;
 use crate::config::Config;
 use crate::parser::{Color, Component, ParseError, Parser, Style};
 
-type ModeComponents = HashMap<InputMode, Vec<Component>>;
-type TabComponents = HashMap<TabPartState, Vec<Component>>;
 type ModeLayouts<'a> = HashMap<InputMode, &'a str>;
 type TabLayouts<'a> = HashMap<TabPartState, &'a str>;
+type SwapLayouts<'a> = HashMap<SwapLayoutState, &'a str>;
+
+type ModeComponents = HashMap<InputMode, Vec<Component>>;
+type TabComponents = HashMap<TabPartState, Vec<Component>>;
+type SwapComponents = HashMap<SwapLayoutState, Vec<Component>>;
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone)]
 pub enum TabPartState {
@@ -23,8 +26,15 @@ pub enum TabPartState {
     RightMoreTabs,
 }
 
+#[derive(PartialEq, Eq, Hash, Copy, Clone)]
+pub enum SwapLayoutState {
+    NonDirty,
+    Dirty,
+}
+
 #[derive(Default, Clone)]
 struct RenderedTabPart {
+    index: usize,
     value: String,
     len: usize,
 }
@@ -34,10 +44,14 @@ struct State {
     layout_components: Vec<Component>,
     mode_components: ModeComponents,
     tab_components: TabComponents,
+    swap_components: SwapComponents,
 
     mode_info: ModeInfo,
     tabs: Vec<TabInfo>,
     active_tab_idx: usize,
+    mouse_click_pos: usize,
+    should_change_tab: bool,
+    cols: usize,
 }
 
 register_plugin!(State);
@@ -61,8 +75,17 @@ impl ZellijPlugin for State {
             Err(e) => self.layout_components = Self::prepare_error("Error parsing tab: ", e),
         }
 
+        match Self::parse_swap_layouts(&cfg.swap_layouts) {
+            Ok(c) => self.swap_components = c,
+            Err(e) => self.layout_components = Self::prepare_error("Error parsing swap: ", e),
+        }
+
         set_selectable(false);
-        subscribe(&[EventType::ModeUpdate, EventType::TabUpdate]);
+        subscribe(&[
+            EventType::ModeUpdate,
+            EventType::TabUpdate,
+            EventType::Mouse,
+        ]);
     }
 
     fn update(&mut self, event: Event) -> bool {
@@ -86,7 +109,24 @@ impl ZellijPlugin for State {
                     eprintln!("Could not find active tab.");
                 }
             }
-            // Event::TabUpdate(tabs) => self.composer.update_tab(tabs),
+            Event::Mouse(me) => match me {
+                Mouse::LeftClick(_, col) => {
+                    if self.mouse_click_pos != col {
+                        should_render = true;
+                        self.should_change_tab = true;
+                    }
+                    self.mouse_click_pos = col;
+                }
+                Mouse::ScrollUp(_) => {
+                    should_render = true;
+                    switch_tab_to(min(self.active_tab_idx + 2, self.tabs.len()) as u32);
+                }
+                Mouse::ScrollDown(_) => {
+                    should_render = true;
+                    switch_tab_to(max(self.active_tab_idx.saturating_sub(2), 1) as u32);
+                }
+                _ => {}
+            },
             _ => {
                 eprintln!("Got unrecognized event: {:?}", event);
             }
@@ -98,6 +138,7 @@ impl ZellijPlugin for State {
         let mut res = Vec::new();
         let mut spacer_pos = Vec::new();
         let mut cols_left = cols;
+        self.cols = cols;
 
         for (i, component) in self.layout_components.iter().enumerate() {
             if let Component::Spacer = component {
@@ -127,6 +168,7 @@ impl ZellijPlugin for State {
         }
 
         print!("{}", res.join(""));
+        self.should_change_tab = false;
     }
 }
 
@@ -138,6 +180,7 @@ impl State {
             Component::Session,
             Component::Mode,
             Component::TabBar,
+            Component::SwapLayout,
         ];
         Ok(Parser::new(layout, allowed_specials).parse()?)
     }
@@ -163,6 +206,18 @@ impl State {
                 allowed_specials.push(Component::Name);
             }
 
+            let components = Parser::new(&v, allowed_specials).parse()?;
+            res.insert(*k, components);
+        }
+
+        Ok(res)
+    }
+
+    fn parse_swap_layouts(layouts: &SwapLayouts) -> Result<SwapComponents, ParseError> {
+        let mut res = HashMap::new();
+
+        for (k, v) in layouts {
+            let allowed_specials = vec![Component::Style(Style::Default), Component::Name];
             let components = Parser::new(&v, allowed_specials).parse()?;
             res.insert(*k, components);
         }
@@ -252,7 +307,7 @@ impl State {
         // Calculate layout window beginning and end
         let offset = cols_left.saturating_sub(hl_len + layout_wrap_len) / 2;
         let layout_begin = hl_begin.saturating_sub(offset);
-        let layout_end = cmp::min(layout_len, hl_end + offset);
+        let layout_end = min(layout_len, hl_end + offset);
 
         // Setup layout wrapping strings
         let wrap_left = if layout_begin > 0 { "..." } else { "^" };
@@ -260,7 +315,7 @@ impl State {
 
         // Squeeze highlighted text if needed.
         let squeeze_size = (hl_len + layout_wrap_len).saturating_sub(cols_left);
-        let hl_end_squeezed = cmp::max(hl_begin, hl_end.saturating_sub(squeeze_size));
+        let hl_end_squeezed = max(hl_begin, hl_end.saturating_sub(squeeze_size));
         if hl_end_squeezed <= hl_begin {
             return ("......".chars().take(cols_left).collect(), cols_left);
         };
@@ -298,7 +353,7 @@ impl State {
     fn render_tab_part(
         &self,
         tab_part_state: TabPartState,
-        number: usize,
+        index: usize,
         name: &str,
     ) -> RenderedTabPart {
         let mut render_tab_name = name.clone();
@@ -316,7 +371,7 @@ impl State {
             let (rendered, curr_len) = match c {
                 Component::Text(t) => self.render_text(&t, usize::MAX),
                 Component::Style(s) => self.render_style(&s),
-                Component::Index => self.render_text(&number.to_string(), usize::MAX),
+                Component::Index => self.render_text(&index.to_string(), usize::MAX),
                 Component::Name => self.render_text(render_tab_name, usize::MAX),
                 _ => self.render_text("{unparsed}", usize::MAX),
             };
@@ -324,7 +379,7 @@ impl State {
             len += curr_len;
         }
 
-        RenderedTabPart { value, len }
+        RenderedTabPart { index, value, len }
     }
 
     fn get_tab_parts(&self) -> Vec<RenderedTabPart> {
@@ -343,20 +398,19 @@ impl State {
         res
     }
 
+    fn change_active_tab(&self, tab_parts: &Vec<RenderedTabPart>, cols_left: usize) {
+        let mut len_cnt = self.cols.saturating_sub(cols_left);
+        for part in tab_parts {
+            if self.mouse_click_pos >= len_cnt && self.mouse_click_pos < len_cnt + part.len {
+                switch_tab_to(part.index as u32);
+            }
+            len_cnt += part.len;
+        }
+    }
+
     // TODO: this is huge
     fn render_tab_bar(&self, cols_left: usize) -> (String, usize) {
-        let parts_len = |parts: &Vec<RenderedTabPart>| parts.iter().map(|x| x.len).sum();
-        let glue_parts = |parts: &Vec<RenderedTabPart>| {
-            let iter = parts.iter();
-            iter.map(|x| x.value.to_string()).collect::<String>()
-        };
-
         let mut tab_parts = self.get_tab_parts();
-        let tab_parts_total_len = parts_len(&tab_parts);
-        if tab_parts_total_len <= cols_left {
-            return (glue_parts(&tab_parts), tab_parts_total_len);
-        }
-
         let mut before_active_tab_count = self.active_tab_idx;
         let mut after_active_tab_count = tab_parts.len().saturating_sub(self.active_tab_idx + 1);
         let mut collapsed_left_count = 0;
@@ -364,20 +418,26 @@ impl State {
         let mut collapsed_left = RenderedTabPart::default();
         let mut collapsed_right = RenderedTabPart::default();
 
-        loop {
+        let (res, len, parts) = loop {
             let mut tab_parts_with_collapsed = tab_parts.clone();
+            if tab_parts.len() > 0 {
+                collapsed_left.index = tab_parts.first().unwrap().index.saturating_sub(1);
+                collapsed_right.index = tab_parts.last().unwrap().index + 1;
+            }
             tab_parts_with_collapsed.insert(0, collapsed_left.clone());
             tab_parts_with_collapsed.push(collapsed_right.clone());
-            let tab_parts_total_len = parts_len(&tab_parts_with_collapsed);
 
             // Break the loop when it fits cols_left
+            let tab_parts_total_len = tab_parts_with_collapsed.iter().map(|x| x.len).sum();
             if tab_parts_total_len <= cols_left {
-                return (glue_parts(&tab_parts_with_collapsed), tab_parts_total_len);
+                let iter = tab_parts_with_collapsed.iter();
+                let res = iter.map(|x| x.value.to_string()).collect::<String>();
+                break (res, tab_parts_total_len, tab_parts_with_collapsed);
             }
 
             // return empty if cols_left is less than an active tab length
             if tab_parts.len() == 1 && tab_parts.first().unwrap().len > cols_left {
-                return ("".to_string(), 0);
+                break ("".to_string(), 0, tab_parts_with_collapsed);
             }
 
             // remove from tab_parts and increment collapsed tabs count
@@ -397,6 +457,53 @@ impl State {
                 collapsed_left = RenderedTabPart::default();
                 collapsed_right = RenderedTabPart::default();
             };
+        };
+
+        if self.should_change_tab {
+            self.change_active_tab(&parts, cols_left)
+        }
+
+        (res, len)
+    }
+
+    fn render_swap_layout_part(&self, name: String, is_dirty: bool) -> (String, usize) {
+        let mut res = String::new();
+        let mut len = 0;
+        let key = match is_dirty {
+            true => SwapLayoutState::Dirty,
+            false => SwapLayoutState::NonDirty,
+        };
+
+        for c in &self.swap_components[&key] {
+            let (rendered, curr_len) = match c {
+                Component::Text(t) => self.render_text(&t, usize::MAX),
+                Component::Style(s) => self.render_style(&s),
+                Component::Name => self.render_text(&name, usize::MAX),
+                _ => self.render_text("{unparsed}", usize::MAX),
+            };
+            res.push_str(&rendered);
+            len += curr_len;
+        }
+
+        (res, len)
+    }
+
+    fn render_swap_layout(&self, cols_left: usize) -> (String, usize) {
+        if let Some(active_tab) = &self.tabs.iter().nth(self.active_tab_idx) {
+            let (rendered, len) = match &active_tab.active_swap_layout_name {
+                Some(n) => {
+                    self.render_swap_layout_part(n.to_string(), active_tab.is_swap_layout_dirty)
+                }
+                None => ("".to_string(), 0),
+            };
+
+            if len > cols_left {
+                ("".to_string(), 0)
+            } else {
+                (rendered, len)
+            }
+        } else {
+            ("".to_string(), 0)
         }
     }
 
@@ -407,6 +514,7 @@ impl State {
             Component::Session => self.render_session(cols_left),
             Component::Mode => self.render_mode(cols_left),
             Component::TabBar => self.render_tab_bar(cols_left),
+            Component::SwapLayout => self.render_swap_layout(cols_left),
             Component::LayoutHighlight {
                 layout,
                 hl_begin,

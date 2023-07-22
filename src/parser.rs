@@ -10,6 +10,7 @@ pub enum Component {
     Session,
     Mode,
     TabBar,
+    SwapLayout,
     Index,
     Name,
     LayoutHighlight {
@@ -188,6 +189,7 @@ impl<'a> Parser<'a> {
             Some((_, 'T')) if is_allowed!(Component::TabBar) => Ok(vec![Component::TabBar]),
             Some((_, 'I')) if is_allowed!(Component::Index) => Ok(vec![Component::Index]),
             Some((_, 'N')) if is_allowed!(Component::Name) => Ok(vec![Component::Name]),
+            Some((_, 'L')) if is_allowed!(Component::SwapLayout) => Ok(vec![Component::SwapLayout]),
             Some((_, '_')) if is_allowed!(Component::Spacer) => Ok(vec![Component::Spacer]),
             Some((_, '[')) if is_allowed!(Component::Style(..)) => Ok(self.parse_styles()?),
             Some((hl_begin, _)) => Err(ParseError::new(
