@@ -360,9 +360,11 @@ impl State {
         let mut value = String::new();
         let mut len = 0;
 
-        if self.tab_components[&tab_part_state]
+        if render_tab_name.is_empty() {
+            render_tab_name = "Enter name..."
+        } else if self.tab_components[&tab_part_state]
             .iter()
-            .any(|x| matches!(x, Component::Index))
+            .any(|x| matches!(x, Component::Index)) && render_tab_name.contains("Tab #")
         {
             render_tab_name = "Tab"
         }

@@ -2,6 +2,7 @@ use core::iter::Enumerate;
 use core::str::Chars;
 use std::iter::Peekable;
 
+/// Set of components to show in the bar.
 #[derive(Debug, PartialEq)]
 pub enum Component {
     Text(String),
@@ -13,6 +14,7 @@ pub enum Component {
     SwapLayout,
     Index,
     Name,
+    /// Layout string with highlighted part describing where parsing fails.
     LayoutHighlight {
         layout: String,
         hl_begin: usize,
@@ -47,6 +49,7 @@ pub enum Color {
     Brown,
 }
 
+/// Parsing error data.
 #[derive(Debug)]
 pub struct ParseError {
     pub context: String,
@@ -55,32 +58,17 @@ pub struct ParseError {
     pub hl_end: usize,
 }
 
-impl ParseError {
-    fn new(context: &str, layout: &str, hl_begin: usize, hl_end: usize) -> ParseError {
-        ParseError {
-            context: context.to_string(),
-            layout: layout.to_string(),
-            hl_begin,
-            hl_end,
-        }
-    }
-}
-
 pub struct Parser<'a> {
     layout: &'a str,
-    len: usize,
     iter: Peekable<Enumerate<Chars<'a>>>,
     allowed_specials: Vec<Component>,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(layout: &'a str, allowed_specials: Vec<Component>) -> Parser<'a> {
-        let iter = layout.chars().enumerate().peekable();
-        let len = layout.chars().count();
         Parser {
             layout,
-            len,
-            iter,
+            iter: layout.chars().enumerate().peekable(),
             allowed_specials,
         }
     }
@@ -89,30 +77,30 @@ impl<'a> Parser<'a> {
     fn parse_color(token: &str) -> Result<Style, &str> {
         let v: Vec<&str> = token.split(':').collect();
 
-        let color = match v.get(1) {
-            Some(&"black") => Color::Black,
-            Some(&"red") => Color::Red,
-            Some(&"green") => Color::Green,
-            Some(&"yellow") => Color::Yellow,
-            Some(&"blue") => Color::Blue,
-            Some(&"magenta") => Color::Magenta,
-            Some(&"cyan") => Color::Cyan,
-            Some(&"white") => Color::White,
-            Some(&"orange") => Color::Orange,
-            Some(&"gray") => Color::Gray,
-            Some(&"purple") => Color::Purple,
-            Some(&"gold") => Color::Gold,
-            Some(&"silver") => Color::Silver,
-            Some(&"pink") => Color::Pink,
-            Some(&"brown") => Color::Brown,
+        let color = match v.get(1).cloned() {
+            Some("black") => Color::Black,
+            Some("red") => Color::Red,
+            Some("green") => Color::Green,
+            Some("yellow") => Color::Yellow,
+            Some("blue") => Color::Blue,
+            Some("magenta") => Color::Magenta,
+            Some("cyan") => Color::Cyan,
+            Some("white") => Color::White,
+            Some("orange") => Color::Orange,
+            Some("gray") => Color::Gray,
+            Some("purple") => Color::Purple,
+            Some("gold") => Color::Gold,
+            Some("silver") => Color::Silver,
+            Some("pink") => Color::Pink,
+            Some("brown") => Color::Brown,
             _ => {
                 return Err("Unknown color: ");
             }
         };
 
-        match v.get(0) {
-            Some(&"fg") => Ok(Style::Fg(color)),
-            Some(&"bg") => Ok(Style::Bg(color)),
+        match v.get(0).cloned() {
+            Some("fg") => Ok(Style::Fg(color)),
+            Some("bg") => Ok(Style::Bg(color)),
             _ => Err("Unknown color: "),
         }
     }
@@ -128,9 +116,9 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse style components.
-    fn parse_styles(&mut self) -> Result<Vec<Component>, ParseError> {
+    fn parse_style_group(&mut self) -> Result<Vec<Component>, ParseError> {
         let mut res = Vec::new();
-        let hl_begin = self.iter.next().map(|(i, _)| i).unwrap_or(1); // skips '['
+        let hl_begin = self.iter.next().map(|(i, _)| i).unwrap(); // skips '['
 
         loop {
             let token = self.take_until_any(",]#");
@@ -142,31 +130,31 @@ impl<'a> Parser<'a> {
                     Some((_, ',')) => self.iter.next(),
                     Some((_, ']')) => return Ok(res),
                     _ => {
-                        return Err(ParseError::new(
-                            "Unclosed bracket: ",
-                            self.layout,
+                        return Err(ParseError {
+                            context: "Unclosed bracket: ".to_string(),
+                            layout: self.layout.to_string(),
                             hl_begin,
-                            hl_begin + 1,
-                        ))
+                            hl_end: hl_begin + 1,
+                        })
                     }
                 };
             } else if let Err(e) = style {
                 match self.iter.peek() {
                     Some((i, ',')) | Some((i, ']')) => {
-                        return Err(ParseError::new(
-                            e,
-                            self.layout,
-                            i.saturating_sub(token.chars().count()),
-                            *i,
-                        ))
+                        return Err(ParseError {
+                            context: e.to_string(),
+                            layout: self.layout.to_string(),
+                            hl_begin: i.saturating_sub(token.chars().count()),
+                            hl_end: *i,
+                        })
                     }
                     Some((_, '#')) | _ => {
-                        return Err(ParseError::new(
-                            "Unclosed bracket: ",
-                            self.layout,
+                        return Err(ParseError {
+                            context: "Unclosed bracket: ".to_string(),
+                            layout: self.layout.to_string(),
                             hl_begin,
-                            hl_begin + 1,
-                        ))
+                            hl_end: hl_begin + 1,
+                        })
                     }
                 }
             }
@@ -191,19 +179,19 @@ impl<'a> Parser<'a> {
             Some((_, 'N')) if is_allowed!(Component::Name) => Ok(vec![Component::Name]),
             Some((_, 'L')) if is_allowed!(Component::SwapLayout) => Ok(vec![Component::SwapLayout]),
             Some((_, '_')) if is_allowed!(Component::Spacer) => Ok(vec![Component::Spacer]),
-            Some((_, '[')) if is_allowed!(Component::Style(..)) => Ok(self.parse_styles()?),
-            Some((hl_begin, _)) => Err(ParseError::new(
-                "Unexpected token: ",
-                self.layout,
-                *hl_begin,
-                *hl_begin + 1,
-            )),
-            None => Err(ParseError::new(
-                "Unexpected token: ",
-                self.layout,
-                self.len - 1,
-                self.len,
-            )),
+            Some((_, '[')) if is_allowed!(Component::Style(..)) => Ok(self.parse_style_group()?),
+            Some((hl_begin, _)) => Err(ParseError {
+                context: "Unexpected token: ".to_string(),
+                layout: self.layout.to_string(),
+                hl_begin: *hl_begin,
+                hl_end: *hl_begin + 1,
+            }),
+            None => Err(ParseError {
+                context: "Unexpected token: ".to_string(),
+                layout: self.layout.to_string(),
+                hl_begin: self.layout.chars().count() - 1,
+                hl_end: self.layout.chars().count(),
+            }),
         };
 
         self.iter.next(); // it should be 'S' | 'M' | ']' ...
