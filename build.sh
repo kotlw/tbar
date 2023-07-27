@@ -21,17 +21,13 @@ parse_args() {
   done
 }
 
-repeat(){
-	for i in {1..90}; do echo -en "$1"; done
-}
-
-########################################
+#############################################
 # Run the command passed as 1st argument and 
 # shows the spinner until this is done
 # Arguments:
 #   $1 the command to run
 #   $2 the title to show next to the spinner
-########################################
+#############################################
 function execute_step() {
   local log_path="/tmp/tbar-build.log"
   local delay=0.05
@@ -91,11 +87,16 @@ check_dependencies() {
   fi
 }
 
+download() {
+  mkdir -p "${DIR}"
+  git clone "${GIT_URL}" "${DIR}"
+}
+
 apply_config() {
   local config_file="${DIR}/configs/${ARGS_CONFIG}.rs";
 
   if ! test -f "${config_file}"; then
-    echo -e "  ${RED}${config_file} could not be found"
+    echo -e "${RED}${config_file} could not be found"
     exit 1
   fi
 
@@ -103,12 +104,7 @@ apply_config() {
 }
 
 move_artifact() {
-  cp "${DIR}/target/wasm32-wasi/debug/tbar.wasm" "${DIR}/../"
-}
-
-download() {
-  mkdir -p "${DIR}"
-  git clone "${GIT_URL}" "${DIR}"
+  cp "${DIR}/target/wasm32-wasi/release/tbar.wasm" "${DIR}/../"
 }
 
 main() {
@@ -119,7 +115,7 @@ main() {
   [[ "${ARGS_DOWNLOAD}" -eq 1 ]] && execute_step "download" "downloading"
   cd "${DIR}"
   execute_step "apply_config" "applying ${ARGS_CONFIG} config"
-  execute_step "cargo build" "building"
+  execute_step "cargo build --release" "building"
   execute_step "move_artifact" "moving artifact to the plugin root"
   execute_step "" "done" 
   
